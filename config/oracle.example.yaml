@@ -1,0 +1,29 @@
+node_name: delphi-42
+
+radio:
+  device: /dev/ttyUSB0
+  channel: 0
+
+privacy:
+  answer_public_messages: false
+  share_position_publicly: false
+
+broadcasts:
+  interval_minutes: 90
+  messages:
+    - THE ORACLE LISTENS. SEND DM FOR COUNSEL.
+    - ASH NODE AWAKE.
+    - SEEK WISDOM IN PRIVATE.
+
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: data/index/oracle.db
+  kiwix_url: http://127.0.0.1:8080
+
+llm:
+  backend: llama.cpp
+  model_path: models/oracle.gguf
+  max_words: 40
+
+wifi:
+  ssid: DELPHI-42

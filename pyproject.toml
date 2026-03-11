@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "delphi-42"
+version = "0.1.0"
+description = "Offline Meshtastic oracle node for Raspberry Pi"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+bot = [
+  "meshtastic",
+]
+
+[project.scripts]
+delphi-bot = "bot.oracle_bot:main"
+delphi-build-index = "ingest.build_index:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot", "bot.*", "core", "core.*", "ingest", "ingest.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

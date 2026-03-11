@@ -1,286 +1,268 @@
-# DELPHI‑42
+# DELPHI-42
 
-### A post‑apocalyptic oracle node for Meshtastic
+### A post-apocalyptic oracle node for Meshtastic
 
-Delphi‑42 is an experimental **offline oracle node** built on:
+Delphi-42 is an experimental offline oracle node built for:
 
--   Meshtastic LoRa mesh network
--   Raspberry Pi
--   Offline knowledge bases (Kiwix / ZIM archives)
--   A small local LLM
+- Meshtastic LoRa mesh communication
+- Raspberry Pi deployment
+- Offline knowledge bases such as Kiwix and ZIM archives
+- A small local LLM for short grounded answers
 
-It allows people to **ask questions via Meshtastic direct messages**,
-and receive short answers generated from an offline knowledge base.
+The node accepts Meshtastic direct messages, retrieves context from a local archive, and returns compact answers without relying on the internet.
 
-No internet required.
-
-The node also periodically broadcasts **cryptic oracle messages** on the
-public mesh to invite nearby nodes to seek it.
-
-------------------------------------------------------------------------
-
-# Concept
+## Concept
 
 In a world without reliable connectivity, knowledge becomes scarce.
 
-Delphi‑42 is a **digital shrine of knowledge**:
+Delphi-42 is meant to behave like a digital shrine of knowledge:
 
--   discoverable through the **Meshtastic mesh**
--   powered by **offline libraries**
--   queryable via **LoRa messages**
--   accessible locally via **WiFi hotspot**
+- discoverable through the Meshtastic mesh
+- powered by offline libraries
+- queryable via LoRa messages
+- accessible locally through a WiFi hotspot for full archive browsing
 
-Users can:
+Typical user flow:
 
-1.  ask questions via Meshtastic DM
-2.  receive short oracle answers
-3.  request the oracle's location
-4.  physically travel to the node
-5.  connect to its WiFi and access the full knowledge archive
+1. Ask a question via Meshtastic direct message.
+2. Receive a short oracle answer.
+3. Request the oracle's location privately.
+4. Travel to the node.
+5. Join the hotspot and browse the larger archive.
 
-------------------------------------------------------------------------
+## Features
 
-# Features
+### Meshtastic Oracle Bot
 
-## Meshtastic Oracle Bot
+The bot:
 
-The node connects to a Meshtastic radio and:
+- listens for direct messages
+- ignores public questions
+- answers compact `ask <question>` requests
+- broadcasts occasional public oracle messages
+- can share a private position packet to the requesting node
 
--   listens for **Direct Messages**
--   ignores public messages
--   answers questions
--   sends periodic **oracle broadcasts** on channel 0
+Supported direct-message commands:
 
-Supported commands (via DM):
-
-    help
-    where
-    pos
-    ask <question>
+```text
+help
+where
+pos
+ask <question>
+```
 
 Examples:
 
-    ask how to purify water
-    ask hypothermia symptoms
-    where
+```text
+ask how to purify water
+ask hypothermia symptoms
+where
+```
 
-------------------------------------------------------------------------
+### Oracle Broadcasts
 
-## Oracle Broadcasts
+Example public broadcasts:
 
-Occasionally the node writes on the public channel:
+```text
+THE ORACLE LISTENS. SEND DM FOR COUNSEL.
+ASH NODE AWAKE.
+SEEK WISDOM IN PRIVATE.
+```
 
-    THE ORACLE LISTENS. SEND DM FOR COUNSEL.
-    ASH NODE AWAKE.
-    SEEK WISDOM IN PRIVATE.
+Broadcasts should invite discovery without flooding the mesh.
 
-These messages advertise the oracle without flooding the mesh.
+### Privacy Model
 
-------------------------------------------------------------------------
+- The oracle never shares its position publicly.
+- Public channel traffic is limited to short cryptic broadcasts.
+- Knowledge answers are delivered only in private.
 
-## Location Sharing
+### Offline Knowledge
 
-The oracle **never shares its position publicly**.
+The retrieval layer is designed for offline datasets such as:
 
-When asked via DM:
+- Wikipedia snapshots
+- survival manuals
+- first aid material
+- repair guides
 
-    where
+Recommended format:
 
-the bot sends a **private position packet** to the requesting node.
+```text
+ZIM archive
+  -> text extraction
+  -> chunking
+  -> SQLite FTS index
+```
 
-------------------------------------------------------------------------
+### Local WiFi Archive
 
-## Offline Knowledge
+When a user reaches the node physically, they can join the hotspot and browse the full archive through Kiwix or another local web interface.
 
-The oracle retrieves knowledge from **offline datasets** such as:
+## System Architecture
 
--   Wikipedia
--   survival manuals
--   first aid
--   repair guides
+```text
+Meshtastic Network
+        |
+        v
+   Meshtastic Node
+        | USB
+        v
+Raspberry Pi Oracle Node
+ |- bot
+ |- core
+ |- local LLM
+ |- knowledge index
+ `- Kiwix server
+        |
+        v
+   WiFi hotspot
+        |
+        v
+ users / explorers
+```
 
-Content is typically stored in **ZIM archives** and served through
-**Kiwix**.
+## Repository Layout
 
-------------------------------------------------------------------------
+The repository is now organized as a Python-first project skeleton that matches the architecture above:
 
-## Local WiFi Archive
+```text
+delphi-42/
+├── bot/
+│   ├── __init__.py
+│   ├── command_parser.py
+│   ├── message_router.py
+│   ├── oracle_bot.py
+│   └── radio_interface.py
+├── config/
+│   └── oracle.example.yaml
+├── core/
+│   ├── __init__.py
+│   ├── intent.py
+│   ├── llm_runner.py
+│   ├── oracle_service.py
+│   ├── prompt_builder.py
+│   └── retriever.py
+├── docs/
+│   └── sops/
+│       └── agentic_ai.md
+├── ingest/
+│   ├── __init__.py
+│   ├── build_index.py
+│   ├── chunker.py
+│   └── zim_extract.py
+├── systemd/
+│   ├── oracle-bot.service
+│   └── oracle-core.service
+├── tests/
+│   ├── test_chunker.py
+│   ├── test_command_parser.py
+│   └── test_oracle_service.py
+├── .gitignore
+├── pyproject.toml
+└── README.md
+```
 
-When users physically reach the oracle node, they can connect to its
-WiFi hotspot and browse the entire knowledge archive through a local web
-interface.
+## Software Components
 
-------------------------------------------------------------------------
+### `bot/`
 
-# System Architecture
+Meshtastic-facing logic:
 
-    Meshtastic Network
-            │
-            ▼
-       Meshtastic Node
-            │ USB
-            ▼
-    Raspberry Pi Oracle Node
-     ├── oracle-bot
-     ├── oracle-core
-     ├── local LLM
-     ├── knowledge index
-     └── Kiwix server
-            │
-            ▼
-     WiFi hotspot
-            │
-            ▼
-     users / explorers
+- parse incoming commands
+- filter for direct-message traffic
+- route requests to `core/`
+- emit replies and private position packets
 
-------------------------------------------------------------------------
+### `core/`
 
-# Software Components
+Reasoning and response layer:
 
-## oracle-bot
+- classify intent
+- retrieve relevant local context
+- build constrained prompts
+- run a local answer generator
+- enforce short response limits suitable for mesh delivery
 
-Handles Meshtastic communication.
+### `ingest/`
 
-Responsibilities:
+Knowledge-preparation pipeline:
 
--   listen to incoming packets
--   respond to **DM only**
--   publish periodic oracle messages
--   send position packets
--   route queries to oracle-core
+- extract text from offline sources
+- chunk long documents
+- build a local SQLite FTS index
 
-------------------------------------------------------------------------
+### `docs/sops/agentic_ai.md`
 
-## oracle-core
+Operational SOP for running an offline agentic oracle on Raspberry Pi + Meshtastic + Kiwix + local LLM.
 
-The reasoning engine.
+## Bootstrap
 
-Responsibilities:
+Create a local environment:
 
--   classify user intent
--   retrieve knowledge from local index
--   generate short answers using an LLM
--   enforce response length limits
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
 
-------------------------------------------------------------------------
+Run tests:
 
-## Knowledge Index
+```bash
+pytest
+```
 
-Offline documents are processed into a searchable index.
+Start the starter bot locally:
 
-Pipeline:
+```bash
+python -m bot.oracle_bot
+```
 
-    ZIM archive
-       ↓
-    text extraction
-       ↓
-    chunking
-       ↓
-    SQLite FTS index
+Build an index from plaintext files:
 
-------------------------------------------------------------------------
+```bash
+python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle.db
+```
 
-# Hardware
+## Deployment Notes
 
-Recommended configuration:
+- Copy `config/oracle.example.yaml` to `config/oracle.yaml` and adjust device paths, model paths, and storage locations.
+- Install the starter systemd units from `systemd/` on the Raspberry Pi.
+- Treat the current code as a scaffold: it establishes repo shape, interfaces, and operational boundaries, not a finished radio daemon.
 
--   Raspberry Pi 5 (16GB)
--   Meshtastic LoRa device
--   SSD storage for knowledge base
--   Solar panel + LiFePO4 battery
--   Weatherproof enclosure
-
-------------------------------------------------------------------------
-
-# Repository Structure
-
-    delphi-42
-    │
-    ├─ bot
-    │  ├─ radio_interface.py
-    │  ├─ message_router.py
-    │  ├─ command_parser.py
-    │  └─ oracle_bot.py
-    │
-    ├─ core
-    │  ├─ oracle_service.py
-    │  ├─ retriever.py
-    │  ├─ intent.py
-    │  ├─ prompt_builder.py
-    │  └─ llm_runner.py
-    │
-    ├─ ingest
-    │  ├─ zim_extract.py
-    │  ├─ chunker.py
-    │  └─ build_index.py
-    │
-    ├─ config
-    │  └─ oracle.yaml
-    │
-    ├─ systemd
-    │  ├─ oracle-bot.service
-    │  └─ oracle-core.service
-    │
-    └─ README.md
-
-------------------------------------------------------------------------
-
-# Installation (planned)
-
-Install Meshtastic Python client:
-
-    pip install meshtastic
-
-Connect radio device:
-
-    /dev/ttyUSB0
-
-Start services:
-
-    systemctl start oracle-bot
-    systemctl start oracle-core
-
-------------------------------------------------------------------------
-
-# Roadmap
+## Roadmap
 
 ### Phase 1
 
--   Meshtastic DM listener
--   command parser
--   oracle broadcasts
+- Meshtastic direct-message listener
+- command parser
+- oracle broadcasts
 
 ### Phase 2
 
--   knowledge index
--   deterministic answers
+- knowledge index
+- deterministic answers
 
 ### Phase 3
 
--   local LLM integration
+- local LLM integration
 
 ### Phase 4
 
--   WiFi archive
--   pilgrimage mode
+- WiFi archive
+- pilgrimage mode
 
-------------------------------------------------------------------------
+## Project Status
 
-# Project Status
+Early experimental prototype with a now-initialized repository structure and Python 3.9+ starter scaffold.
 
-Early experimental prototype.
+## Inspiration
 
-------------------------------------------------------------------------
+- Meshtastic mesh networks
+- offline internet projects
+- knowledge shrines
+- post-collapse communication systems
 
-# Inspiration
-
--   Meshtastic mesh networks
--   Offline internet projects
--   Knowledge shrines
--   Post‑collapse communication systems
-
-------------------------------------------------------------------------
-
-# License
+## License
 
 TBD

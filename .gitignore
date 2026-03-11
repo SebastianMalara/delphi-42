@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local environment
+.env
+.env.*
+
+# Project-local tooling
+.serena/
+
+# Runtime artifacts
+logs/
+artifacts/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Offline content and large assets
+data/library/
+data/index/
+models/
+*.zim
+*.gguf
+

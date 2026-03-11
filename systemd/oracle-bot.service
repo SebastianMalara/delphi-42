@@ -1,0 +1,16 @@
+[Unit]
+Description=Delphi-42 Meshtastic oracle bot
+After=local-fs.target
+Requires=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/delphi-42
+Environment=DELPHI_CONFIG=/opt/delphi-42/config/oracle.yaml
+ExecStart=/usr/bin/env python -m bot.oracle_bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
