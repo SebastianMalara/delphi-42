@@ -10,41 +10,45 @@
 
 ## Prototype V1 Topology
 
-Prototype v1 uses a Raspberry Pi as the control and compute plane, a Meshtastic radio as the LoRa interface, an SSD as the storage plane, and a hotspot stack for local archive access.
+Prototype v1 uses a Raspberry Pi as the control and compute plane, a Heltec T114 as the Pi-attached Meshtastic interface, a USB SSD as the storage plane, and a hotspot stack for local archive access. The outdoor power path is frozen around a 12V LiFePO4 battery, 100W solar panel, Victron MPPT controller, and a small pure sine inverter that feeds the official Raspberry Pi USB-C PSU.
 
 ```mermaid
 flowchart TD
-  Solar["Solar Panel"] --> Charge["Charge Controller"]
-  Charge --> Battery["LiFePO4 Battery"]
-  Battery --> Regulator["5V Regulator / PD Supply"]
-  Regulator --> Pi["Raspberry Pi 5"]
-  Pi --> SSD["USB 3 SSD"]
-  Pi --> Radio["Meshtastic Radio via USB"]
+  Solar["Renogy 100W Panel"] --> Charge["Victron 75/10 MPPT"]
+  Charge --> Battery["Accurat T42 LiFePO4"]
+  Battery --> Inverter["Victron Phoenix 12/250"]
+  Inverter --> PSU["Official Pi 27W USB-C PSU"]
+  PSU --> Pi["Raspberry Pi 5 16GB"]
+  Pi --> SSD["Crucial X9 1TB SSD"]
+  Pi --> Radio["Heltec T114 Rev 2 via USB-C"]
   Pi --> WiFi["Hotspot / WiFi"]
-  Pi --> Cooling["Fan / Thermal Management"]
+  Pi --> Cooling["Official Pi Active Cooler"]
   WiFi --> Users["Nearby Users"]
-  Radio --> Mesh["Meshtastic Mesh"]
+  Radio --> BenchAntenna["Bench or Field 868 Antenna"]
+  BenchAntenna --> Mesh["Meshtastic Mesh"]
+  SenseCAP["Optional SenseCAP Solar Node P1"] --> Mesh
 ```
 
 ## Physical Subsystems
 
-- Compute plane: Raspberry Pi 5 with sufficient RAM for small local model inference and index management
-- Radio plane: Meshtastic-capable device connected over USB serial
-- Storage plane: external SSD for corpora, model, and index
-- Power plane: battery-backed system with optional solar charging
+- Compute plane: Raspberry Pi 5 16GB with official active cooling
+- Radio plane: Heltec T114 Rev 2, 868 MHz, GPS variant, connected over USB-C
+- Storage plane: Crucial X9 1TB external SSD
+- Power plane: bench AC through the official Pi PSU, field DC through the LiFePO4 plus MPPT plus inverter path
 - Access plane: Pi-hosted hotspot exposing Kiwix archive
-- Environmental plane: weather-resistant enclosure with thermal management
+- Environmental plane: Hammond 1554X2GYCL electronics enclosure with external battery and field antenna
 
 ## Placement Guidance
 
-- Keep the radio antenna external to the enclosure when possible.
+- Keep the field antenna external to the enclosure and use the SECTRON R36 screw-mount assembly for the field build.
 - Isolate SSD and Pi mounting so vibration does not stress cables.
-- Route power and RF cleanly to reduce accidental interference.
+- Route inverter, DC, and RF paths separately to reduce accidental interference.
 - Preserve serviceability: operator should be able to replace storage or radio without fully disassembling the enclosure.
 
 ## Prototype Boundary
 
 - One Pi per node
-- One radio per node
+- One Pi-attached T114 per main node
 - One local archive instance per node
 - No redundant power or compute plane in Prototype v1
+- Optional SenseCAP Solar Node P1 is treated as a remote companion or repeater, not the main oracle radio

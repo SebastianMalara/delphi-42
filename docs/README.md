@@ -75,6 +75,7 @@ Read the docs in this order if you are new to the project:
 - [`project/risk_register.md`](project/risk_register.md): risks, mitigations, and owners.
 - [`project/contributing.md`](project/contributing.md): expected workflow for contributors.
 - [`project/documentation_governance.md`](project/documentation_governance.md): document structure, review, and quality checks.
+- [`project/reviews/hardware_bom_signoff.md`](project/reviews/hardware_bom_signoff.md): milestone review and approval evidence for the frozen BOM.
 - [`project/adrs/README.md`](project/adrs/README.md): architectural decision records.
 
 ## Document Standards

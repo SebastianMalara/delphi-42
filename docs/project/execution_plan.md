@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Documentation | Publish repo-native documentation suite | Project Lead | Done | 2026-03-11 | none | docs taxonomy, README front door, and governance docs merged | `docs/README.md` |
 | Documentation | Publish tracked execution plan and risk register | Project Lead | Done | 2026-03-11 | none | tracked project docs merged | `docs/project/execution_plan.md`, `docs/project/risk_register.md` |
-| Hardware | Freeze prototype hardware BOM | Hardware Lead | Not Started | 2026-03-20 | ADR-0005 | BOM approved and procurement-ready | signed BOM review |
+| Hardware | Freeze prototype hardware BOM | Hardware Lead | Done | 2026-03-11 | ADR-0005 | BOM approved and procurement-ready | `docs/hardware/bill_of_materials.md`, `docs/project/reviews/hardware_bom_signoff.md` |
 | Hardware | Assemble bench prototype node | Hardware Lead | Not Started | 2026-03-27 | hardware BOM | powered bench node with Pi, radio, SSD, and enclosure draft | assembly checklist |
 | Platform | Provision Raspberry Pi base image and storage layout | Ops Lead | Not Started | 2026-03-27 | bench prototype | Pi boots with stable mounts and base packages | provisioning log |
 | Radio | Replace dry-run transport with real Meshtastic integration | Software Lead | Not Started | 2026-04-03 | ADR-0002, provisioned Pi | bot communicates with live radio over supported device path | integration test note |
