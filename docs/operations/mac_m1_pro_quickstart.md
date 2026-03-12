@@ -12,7 +12,7 @@
 
 This is the preferred fast-feedback software lane for Delphi-42:
 
-- run Delphi-42 natively in a local Python venv
+- run Delphi-42 natively in a `uv`-managed Python environment
 - run LM Studio on the host as the OpenAI-compatible model API
 - use Kiwix in Docker only if you want archive browsing
 - keep real `.zim` archives under `data/library/zim`
@@ -21,10 +21,10 @@ This is the preferred fast-feedback software lane for Delphi-42:
 ## Prerequisites
 
 1. Install Homebrew if it is not already present.
-2. Install `libzim`:
+2. Install `libzim` and `uv`:
 
 ```bash
-brew install libzim
+brew install libzim uv
 ```
 
 3. Confirm you have:
@@ -40,9 +40,8 @@ mkdir -p data/index data/library/plaintext data/library/zim
 5. Create the Python environment and install the project:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .[bot,llm,zim]
+uv venv
+uv pip install -e .[bot,llm,zim]
 ```
 
 ## LM Studio Setup
@@ -64,19 +63,19 @@ curl http://127.0.0.1:1234/v1/models
 Build the sample index:
 
 ```bash
-python -m ingest.build_index --input-dir sample_data/plaintext --db data/index/oracle-mac.db
+uv run python -m ingest.build_index --input-dir sample_data/plaintext --db data/index/oracle-mac.db
 ```
 
 Run preflight:
 
 ```bash
-python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
+uv run python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
 ```
 
 Start the simulated console:
 
 ```bash
-DELPHI_CONFIG=config/oracle.mac.sim.yaml python -m bot.dev_console
+DELPHI_CONFIG=config/oracle.mac.sim.yaml uv run python -m bot.dev_console
 ```
 
 Smoke tests:
@@ -107,7 +106,7 @@ Enable runtime fallback in [`config/oracle.mac.sim.yaml`](../../config/oracle.ma
 Validate direct runtime `.zim` fallback first by keeping the sample-only SQLite index and rerunning preflight:
 
 ```bash
-python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
+uv run python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
 ```
 
 Run the simulated console again and ask a question that is not answered by `sample_data/plaintext` but is likely covered by the allowlisted archive. That should force:
@@ -119,8 +118,8 @@ Run the simulated console again and ask a question that is not answered by `samp
 Then validate the ingest path explicitly:
 
 ```bash
-python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist wikipedia_en_medicine_maxi_2023-12.zim
-python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-mac-zim.db
+uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist wikipedia_en_medicine_maxi_2023-12.zim
+uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-mac-zim.db
 ```
 
 Expected results:
@@ -135,7 +134,7 @@ Expected results:
 2. List visible serial devices:
 
 ```bash
-python -m scripts.mac_preflight --config config/oracle.mac.live.yaml
+uv run python -m scripts.mac_preflight --config config/oracle.mac.live.yaml
 ```
 
 The first live preflight run will usually fail until you replace the placeholder device path. Use the listed `/dev/cu.usb*` or `/dev/tty.usb*` values to choose the correct device.
@@ -147,13 +146,13 @@ The first live preflight run will usually fail until you replace the placeholder
 4. Re-run preflight:
 
 ```bash
-python -m scripts.mac_preflight --config config/oracle.mac.live.yaml
+uv run python -m scripts.mac_preflight --config config/oracle.mac.live.yaml
 ```
 
 5. Start the live bot:
 
 ```bash
-DELPHI_CONFIG=config/oracle.mac.live.yaml python -m bot.oracle_bot
+DELPHI_CONFIG=config/oracle.mac.live.yaml uv run python -m bot.oracle_bot
 ```
 
 6. Use a second Meshtastic client, such as another node or the phone app, to send DMs to the Mac-attached T114.

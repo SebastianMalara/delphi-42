@@ -37,8 +37,8 @@ sudo systemctl restart llm-openai-api
 6. Create the deployment directory, recommended as `/opt/delphi-42`.
 7. Install Docker Engine and the Compose plugin if the node will use the container-first runtime path.
 8. Copy repo contents or deploy a packaged checkout.
-9. If you need a native debug path, create and activate a virtual environment.
-10. If using the native debug path, install the project in editable or packaged mode with required extras, including `zim` support.
+9. If you need a native debug path, install `uv` and create a managed environment.
+10. If using the native debug path, install the project with `uv pip install -e .[bot,llm,zim]`.
 11. Validate the local model service before bot deployment:
 
 ```bash
