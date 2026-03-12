@@ -4,7 +4,7 @@
 - Audience: Engineering, operations, and project leadership.
 - Owner: Project Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: project_brief.md, non_functional_requirements.md, ../project/execution_plan.md
 - Exit Criteria: Prototype v1 in-scope work, out-of-scope items, and deferred items are explicit enough to guide planning.
 
@@ -14,7 +14,8 @@
 - One Meshtastic-connected oracle process handling direct messages
 - Commands: `help`, `where`, `pos`, and `ask <question>`
 - Offline corpus preparation into a local SQLite FTS index
-- Retrieval-first answer generation with a small local LLM or deterministic fallback
+- Hybrid archive design: Kiwix for browsing plus a separate local retrieval index derived from curated content
+- Retrieval-first answer generation through the AX8850-backed local `StackFlow` API or deterministic fallback
 - Hotspot-based access to a larger local archive
 - Repeatable runbooks for provision, deploy, recover, and validate
 - Trackable project execution plan and risk register
@@ -25,8 +26,10 @@
 - Public-channel question answering
 - Cloud-hosted LLMs or cloud retrieval
 - Autonomous long-form reasoning agents
+- Voice assistant UX, wake word flows, or Whisplay-style audio interaction
 - Full moderation platform or user account system
 - Continuous online updates from the public internet
+- Native AXCL SDK integration instead of the local OpenAI-compatible API
 - Production manufacturing documentation
 
 ## Deferred After Prototype V1
@@ -37,6 +40,7 @@
 - Automated solar telemetry and battery analytics
 - Full multilingual prompt and corpus support
 - Web admin UI for operators
+- Alternative accelerator backends beyond the AX8850 / StackFlow baseline
 
 ## Scope Guardrails
 

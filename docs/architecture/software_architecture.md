@@ -4,7 +4,7 @@
 - Audience: Engineering and architecture reviewers.
 - Owner: Software Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: system_context.md, runtime_flows.md, ../../bot/, ../../core/, ../../ingest/
 - Exit Criteria: The intended code structure and subsystem responsibilities are concrete enough for implementation without additional product decisions.
 
@@ -23,10 +23,12 @@ The current repository is a Python-first scaffold and the architecture follows t
   - intent classification
   - retrieval abstraction
   - prompt construction
-  - local model runner or deterministic fallback
+  - local OpenAI-compatible model runner or deterministic fallback
+  - deterministic answer shaping and packet splitting
   - answer policy and privacy rules
 - `ingest/`
   - text extraction
+  - Kiwix/ZIM-derived corpus preparation
   - chunking
   - SQLite FTS index construction
 - `config/`
@@ -39,7 +41,7 @@ The current repository is a Python-first scaffold and the architecture follows t
 - `bot` calls `core.oracle_service` with canonical parsed commands.
 - `core` depends on retriever and model interfaces, not on radio details.
 - `ingest` produces the persistent index consumed by `core`.
-- `config/oracle.yaml` configures radio path, privacy rules, knowledge paths, hotspot data, and model runtime.
+- `config/oracle.yaml` configures radio path, privacy rules, knowledge paths, hotspot data, model service endpoint, and reply limits.
 
 ## Data/Control Flow
 
@@ -47,15 +49,16 @@ The current repository is a Python-first scaffold and the architecture follows t
 2. `command_parser` converts text to a canonical command.
 3. `oracle_service` classifies intent and chooses help, position, or ask handling.
 4. On `ask`, retrieval runs before prompt construction.
-5. The model runner generates a constrained answer or the deterministic fallback handles missing context.
-6. `bot` translates the resulting reply into outbound messages or a private position packet.
+5. The model runner generates a short-answer draft and an extended grounded draft, or the deterministic fallback handles missing context.
+6. `core` shapes the final reply into a deterministic packet bundle.
+7. `bot` translates the resulting reply bundle into outbound messages or a private position packet.
 
 ## Failure Modes
 
 - Tight coupling between radio and core logic causing hard-to-test behavior
 - Ingest and retrieval drift causing queries to miss intended content
 - LLM backend failure causing silent answer loss unless fallback is enforced
-- Misconfiguration of index or model paths causing runtime degradation
+- Misconfiguration of the local model service, selected model, or index path causing runtime degradation
 
 ## Security/Privacy Constraints
 
@@ -66,5 +69,7 @@ The current repository is a Python-first scaffold and the architecture follows t
 ## Implementation Notes
 
 - Keep the retriever and model runner behind narrow interfaces so alternative backends can be swapped without rewriting the radio flow.
+- Treat the M5 StackFlow OpenAI-compatible API as the default v1 inference boundary rather than embedding a native accelerator SDK.
+- Treat answer packet formatting as a core policy concern rather than radio-library glue code.
 - Avoid introducing asynchronous complexity unless the real radio integration requires it.
 - Treat the deterministic fallback as a first-class operational safety path, not just a test helper.

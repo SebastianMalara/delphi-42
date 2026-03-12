@@ -12,8 +12,8 @@
 
 - `oracle-bot.service`: long-running question-answer service
 - `oracle-core.service`: oneshot or scheduled index rebuild
+- `llm-openai-api.service`: AX8850-backed local model service
 - hotspot and archive services managed by the host
-- optional Pi-side UPS monitoring and shutdown service when that hardware is fitted
 
 ## Daily Operator Tasks
 
@@ -21,17 +21,21 @@
 - confirm storage mount is present
 - check index age and corpus freshness
 - check available disk space
+- check `llm-openai-api` health and visible model list
 - review privacy-safe logs for errors
-- if the Pi-side UPS is enabled, review low-power events and recent shutdown records
+- review low-power events from the battery or charge-controller telemetry path
 
 ## Standard Commands
 
 ```bash
 systemctl status oracle-bot
+systemctl status llm-openai-api
 systemctl start oracle-bot
 systemctl restart oracle-bot
+systemctl restart llm-openai-api
 systemctl start oracle-core
 journalctl -u oracle-bot -n 100
+curl http://127.0.0.1:8000/v1/models
 ```
 
 ## Service Health Indicators
@@ -39,6 +43,7 @@ journalctl -u oracle-bot -n 100
 - bot process starts without config or import errors
 - radio path resolves correctly
 - index file exists and matches configured location
+- local model service responds and shows the configured model
 - hotspot archive responds locally
 - restart behavior is clean after service or host reboot
-- if a Pi-side UPS is present, battery state and low-power events are visible to the operator
+- battery or charge-controller telemetry is visible enough to drive reduced-service mode and graceful shutdown

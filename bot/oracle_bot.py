@@ -5,10 +5,11 @@ import os
 import time
 from pathlib import Path
 
-from core.llm_runner import LlamaCppRunner, ModelUnavailableError
+from core.llm_runner import AXCLOpenAIRunner, LLMRunner, ModelUnavailableError
 from core.oracle_service import OracleService
 from core.retriever import SQLiteRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig, load_runtime_config
+from core.zim_retriever import RuntimeZimRetriever
 
 from .message_router import MessageRouter, RoutedReply
 from .radio_interface import MeshtasticRadioClient, OutboundMessage, RadioClient
@@ -90,6 +91,7 @@ def build_oracle_bot(
     config.validate_for_bot()
 
     retriever = SQLiteRetriever(config.knowledge.index_path)
+    fallback_retriever = _build_zim_retriever(config, logger)
     logger.info("loaded config %s", config.summary())
     logger.info("loaded retriever index=%s", config.knowledge.index_path)
 
@@ -98,7 +100,8 @@ def build_oracle_bot(
         OracleService(
             retriever=retriever,
             llm=llm,
-            max_words=config.llm.max_words,
+            reply_config=config.reply,
+            fallback_retriever=fallback_retriever,
         )
     )
     radio = MeshtasticRadioClient(
@@ -111,19 +114,44 @@ def build_oracle_bot(
 def _build_llm_runner(
     config: OracleRuntimeConfig,
     logger: logging.Logger,
-) -> LlamaCppRunner | None:
+) -> LLMRunner | None:
     if config.llm.backend == "deterministic":
         logger.info("using deterministic fallback only")
         return None
 
     try:
-        runner = LlamaCppRunner(config.llm.model_path)
+        runner = AXCLOpenAIRunner(
+            base_url=config.llm.base_url,
+            model=config.llm.model,
+            api_key=config.llm.api_key,
+            timeout_seconds=config.llm.timeout_seconds,
+        )
     except ModelUnavailableError as exc:
-        logger.warning("llama.cpp unavailable: %s", exc)
+        logger.warning("%s unavailable: %s", config.llm.backend, exc)
         return None
 
     logger.info("loaded llm backend=%s", config.llm.backend)
     return runner
+
+
+def _build_zim_retriever(
+    config: OracleRuntimeConfig,
+    logger: logging.Logger,
+):
+    if not config.knowledge.runtime_zim_fallback_enabled:
+        return None
+
+    retriever = RuntimeZimRetriever(
+        config.knowledge.zim_dir,
+        config.knowledge.runtime_zim_allowlist,
+        default_limit=config.knowledge.runtime_zim_search_limit,
+    )
+    logger.info(
+        "loaded runtime zim fallback dir=%s allowlist=%s",
+        config.knowledge.zim_dir,
+        ",".join(config.knowledge.runtime_zim_allowlist),
+    )
+    return retriever
 
 
 def main() -> None:

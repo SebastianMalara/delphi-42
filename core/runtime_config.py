@@ -12,7 +12,7 @@ DEFAULT_BROADCAST_MESSAGES = (
     "SEEK WISDOM IN PRIVATE.",
 )
 
-SUPPORTED_LLM_BACKENDS = {"llama.cpp", "deterministic"}
+SUPPORTED_LLM_BACKENDS = {"axcl-openai", "deterministic"}
 
 
 class ConfigError(ValueError):
@@ -42,13 +42,26 @@ class KnowledgeConfig:
     plaintext_dir: Path
     index_path: Path
     kiwix_url: str = "http://127.0.0.1:8080"
+    zim_dir: Path = Path("data/library/zim")
+    runtime_zim_fallback_enabled: bool = False
+    runtime_zim_allowlist: tuple[str, ...] = ()
+    runtime_zim_search_limit: int = 3
 
 
 @dataclass(frozen=True)
 class LLMConfig:
-    backend: str = "llama.cpp"
-    model_path: Path = Path("models/oracle.gguf")
-    max_words: int = 40
+    backend: str = "axcl-openai"
+    base_url: str = "http://127.0.0.1:8000/v1"
+    model: str = "qwen3-1.7B-Int8-ctx-axcl"
+    api_key: str = "sk-"
+    timeout_seconds: int = 45
+
+
+@dataclass(frozen=True)
+class ReplyConfig:
+    short_max_chars: int = 120
+    continuation_max_chars: int = 600
+    max_continuation_packets: int = 3
 
 
 @dataclass(frozen=True)
@@ -64,6 +77,7 @@ class OracleRuntimeConfig:
     broadcasts: BroadcastConfig
     knowledge: KnowledgeConfig
     llm: LLMConfig
+    reply: ReplyConfig
     wifi: WiFiConfig
     source_path: Path
 
@@ -74,7 +88,9 @@ class OracleRuntimeConfig:
             f"channel={self.radio.channel} "
             f"index={self.knowledge.index_path} "
             f"llm_backend={self.llm.backend} "
-            f"max_words={self.llm.max_words}"
+            f"llm_model={self.llm.model} "
+            f"zim_fallback={self.knowledge.runtime_zim_fallback_enabled} "
+            f"reply_short_max={self.reply.short_max_chars}"
         )
 
     def validate_for_bot(self) -> None:
@@ -82,6 +98,21 @@ class OracleRuntimeConfig:
             raise ConfigError(
                 f"Configured index path does not exist: {self.knowledge.index_path}"
             )
+        if self.knowledge.runtime_zim_fallback_enabled:
+            if not self.knowledge.zim_dir.exists():
+                raise ConfigError(
+                    f"Configured zim_dir does not exist: {self.knowledge.zim_dir}"
+                )
+            missing = [
+                filename
+                for filename in self.knowledge.runtime_zim_allowlist
+                if not (self.knowledge.zim_dir / filename).exists()
+            ]
+            if missing:
+                raise ConfigError(
+                    "Configured runtime_zim_allowlist files are missing: "
+                    + ", ".join(missing)
+                )
 
 
 def load_runtime_config(
@@ -126,14 +157,41 @@ def load_runtime_config(
             kiwix_url=str(
                 raw_data.get("knowledge", {}).get("kiwix_url", "http://127.0.0.1:8080")
             ),
-        ),
-        llm=LLMConfig(
-            backend=str(raw_data.get("llm", {}).get("backend", "llama.cpp")).strip(),
-            model_path=_resolve_path(
-                raw_data.get("llm", {}).get("model_path", "models/oracle.gguf"),
+            zim_dir=_resolve_path(
+                raw_data.get("knowledge", {}).get("zim_dir", "data/library/zim"),
                 root_dir,
             ),
-            max_words=int(raw_data.get("llm", {}).get("max_words", 40)),
+            runtime_zim_fallback_enabled=bool(
+                raw_data.get("knowledge", {}).get(
+                    "runtime_zim_fallback_enabled", False
+                )
+            ),
+            runtime_zim_allowlist=_parse_string_tuple(
+                raw_data.get("knowledge", {}).get("runtime_zim_allowlist", ())
+            ),
+            runtime_zim_search_limit=int(
+                raw_data.get("knowledge", {}).get("runtime_zim_search_limit", 3)
+            ),
+        ),
+        llm=LLMConfig(
+            backend=str(raw_data.get("llm", {}).get("backend", "axcl-openai")).strip(),
+            base_url=str(
+                raw_data.get("llm", {}).get("base_url", "http://127.0.0.1:8000/v1")
+            ).strip(),
+            model=str(
+                raw_data.get("llm", {}).get("model", "qwen3-1.7B-Int8-ctx-axcl")
+            ).strip(),
+            api_key=str(raw_data.get("llm", {}).get("api_key", "sk-")).strip(),
+            timeout_seconds=int(raw_data.get("llm", {}).get("timeout_seconds", 45)),
+        ),
+        reply=ReplyConfig(
+            short_max_chars=int(raw_data.get("reply", {}).get("short_max_chars", 120)),
+            continuation_max_chars=int(
+                raw_data.get("reply", {}).get("continuation_max_chars", 600)
+            ),
+            max_continuation_packets=int(
+                raw_data.get("reply", {}).get("max_continuation_packets", 3)
+            ),
         ),
         wifi=WiFiConfig(ssid=str(raw_data.get("wifi", {}).get("ssid", "DELPHI-42"))),
         source_path=path.resolve(),
@@ -168,6 +226,12 @@ def _parse_broadcast_messages(raw_data: dict) -> tuple[str, ...]:
     return messages or DEFAULT_BROADCAST_MESSAGES
 
 
+def _parse_string_tuple(raw_values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(raw_values, (list, tuple)):
+        raise ConfigError("Expected a list of strings.")
+    return tuple(str(value).strip() for value in raw_values if str(value).strip())
+
+
 def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
     if not config.radio.device:
         raise ConfigError("radio.device must not be empty.")
@@ -184,5 +248,26 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
             f"Unsupported llm.backend '{config.llm.backend}'. "
             f"Supported values: {sorted(SUPPORTED_LLM_BACKENDS)}"
         )
-    if config.llm.max_words <= 0:
-        raise ConfigError("llm.max_words must be greater than 0.")
+    if config.llm.backend == "axcl-openai":
+        if not config.llm.base_url:
+            raise ConfigError("llm.base_url must not be empty for axcl-openai.")
+        if not config.llm.model:
+            raise ConfigError("llm.model must not be empty for axcl-openai.")
+    if config.llm.timeout_seconds <= 0:
+        raise ConfigError("llm.timeout_seconds must be greater than 0.")
+    if config.knowledge.runtime_zim_search_limit <= 0:
+        raise ConfigError("knowledge.runtime_zim_search_limit must be greater than 0.")
+    if (
+        config.knowledge.runtime_zim_fallback_enabled
+        and not config.knowledge.runtime_zim_allowlist
+    ):
+        raise ConfigError(
+            "knowledge.runtime_zim_allowlist must not be empty when "
+            "runtime_zim_fallback_enabled is true."
+        )
+    if config.reply.short_max_chars <= 0:
+        raise ConfigError("reply.short_max_chars must be greater than 0.")
+    if config.reply.continuation_max_chars <= 0:
+        raise ConfigError("reply.continuation_max_chars must be greater than 0.")
+    if config.reply.max_continuation_packets < 0:
+        raise ConfigError("reply.max_continuation_packets must be 0 or greater.")

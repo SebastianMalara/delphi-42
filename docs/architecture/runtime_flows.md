@@ -4,7 +4,7 @@
 - Audience: Engineering, QA, and operations.
 - Owner: Software Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: system_context.md, software_architecture.md, ../operations/service_operations.md
 - Exit Criteria: Core runtime sequences are defined well enough to drive implementation, runbooks, and tests.
 
@@ -19,13 +19,15 @@ Runtime flows center on three repeatable behaviors: direct-message answering, pr
 - `bot` service
 - `core` service logic
 - SQLite FTS index
-- local model runtime
+- StackFlow OpenAI-compatible API
+- deterministic packet formatter
 - operator-triggered ingest command
 
 ## Interfaces
 
 - DM commands and private reply channel
 - `python -m bot.oracle_bot`
+- `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...`
 - `python -m ingest.build_index --input-dir ... --db ...`
 - `systemd` service boundaries
 
@@ -40,17 +42,24 @@ sequenceDiagram
   participant Bot as bot
   participant Core as oracle_service
   participant Index as SQLite FTS
-  participant LLM as Local LLM
+  participant Zim as Runtime ZIM Fallback
+  participant LLM as StackFlow API
 
   User->>Mesh: DM "ask how to purify water"
   Mesh->>Bot: inbound private packet
   Bot->>Core: ParsedCommand(name="ask", argument=...)
   Core->>Index: search(question)
   Index-->>Core: top context chunks
-  Core->>LLM: grounded prompt
-  LLM-->>Core: short answer
-  Core-->>Bot: OracleReply(text)
-  Bot-->>Mesh: private answer
+  alt SQLite miss and ZIM fallback enabled
+    Core->>Zim: search allowlisted .zim archives
+    Zim-->>Core: top fallback chunks
+  end
+  Core->>LLM: grounded prompt requesting short and extended drafts
+  LLM-->>Core: grounded answer draft
+  Core->>Core: deterministic packet formatting
+  Core-->>Bot: OracleReply(bundle)
+  Bot-->>Mesh: private short answer
+  Bot-->>Mesh: optional continuation packets
 ```
 
 ### Where Flow
@@ -75,12 +84,16 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant Operator
+  participant Extract as extract_zim
   participant Ingest as build_index
-  participant Corpus as Plaintext/ZIM Source
+  participant Corpus as ZIM/Plaintext Source
   participant DB as SQLite FTS
 
+  Operator->>Extract: run extract_zim
+  Extract->>Corpus: read allowlisted .zim archives
+  Extract-->>Operator: staged plaintext output
   Operator->>Ingest: run build_index
-  Ingest->>Corpus: load or extract text
+  Ingest->>Corpus: load staged plaintext
   Ingest->>Ingest: chunk content
   Ingest->>DB: rebuild chunks index
   DB-->>Ingest: success/failure
@@ -89,12 +102,16 @@ sequenceDiagram
 
 ## Failure Modes
 
-- Ask flow returns no answer because index is empty or model runtime is unavailable
+- Ask flow returns no answer because index is empty or the StackFlow service or model package is unavailable
+- Ask flow overruns radio limits unless packet formatting is deterministic
+- Ask flow never reaches `.zim` fallback because curated ZIM files are missing or misconfigured
 - Where flow leaks publicly if routing ignores DM-only policy
 - Ingest rebuild erases useful data without replacement if source directory is incomplete
+- Kiwix browse content is refreshed without rebuilding the derived retrieval index
 
 ## Security/Privacy Constraints
 
 - Every flow handling user content assumes DM-only routing.
 - Position sharing is a separate private packet, not embedded in public text.
 - Ingest and logs must not expose sensitive local file paths more broadly than needed.
+- Packet splitting must never introduce content that was not present in the grounded answer draft.

@@ -30,7 +30,7 @@ This matrix covers the critical functional, operational, and privacy behaviors r
 - demo questions
 - curated sample corpus
 - example config
-- prototype hardware kit
+- prototype hardware kit with Raspberry Pi 5, M5 AX8850 kit, and Heltec T114
 
 ## Acceptance Criteria
 
@@ -51,10 +51,15 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-004 | public questions are ignored | Integration | local dev | Software Lead | bot integration test |
 | TM-005 | index rebuild succeeds from staged corpus | System | Pi bench | AI Lead | index build log |
 | TM-006 | retrieval returns relevant top-3 passage | System | Pi bench | AI Lead | evaluation notes |
-| TM-007 | answer stays within word budget | Unit | local dev | AI Lead | `pytest` output |
+| TM-007 | answer bundle stays within deterministic packet limits | Unit | local dev | AI Lead | `pytest` output |
 | TM-008 | hotspot archive reachable locally | System | Pi bench | Ops Lead | local access checklist |
 | TM-009 | service restarts cleanly after reboot | System | Pi bench | Ops Lead | reboot drill log |
 | TM-010 | node survives field power cycle | Field | controlled field site | Hardware Lead | field acceptance note |
 | TM-011 | privacy-safe logging behavior | System | Pi bench | Ops Lead | log review |
 | TM-012 | end-to-end ask flow over mesh | Field | controlled field site | QA Lead | field acceptance transcript |
 | TM-013 | low-power event triggers graceful shutdown or reduced-service mode | System | Pi bench | Ops Lead | power management test note |
+| TM-014 | Kiwix/ZIM refresh followed by index rebuild preserves answerability | System | Pi bench | Ops Lead | upgrade drill note |
+| TM-015 | StackFlow `/v1/models` preflight passes before `oracle-bot` start | Integration | Pi bench | Ops Lead | provisioning validation log |
+| TM-016 | missing local model service or model package degrades to deterministic answers | Unit | local dev | AI Lead | `pytest` output |
+| TM-017 | runtime `.zim` fallback triggers only after SQLite misses and stays bounded to the allowlist | Unit | local dev | AI Lead | `pytest` output |
+| TM-018 | `extract_zim` writes normalized plaintext from allowlisted archives | Unit | local dev | AI Lead | `pytest` output |

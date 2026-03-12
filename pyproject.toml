@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "PyYAML>=6.0",
+  "beautifulsoup4>=4.12.0",
 ]
 
 [project.optional-dependencies]
@@ -17,12 +18,16 @@ bot = [
   "meshtastic",
 ]
 llm = [
-  "llama-cpp-python",
+  "openai>=1.30.0",
+]
+zim = [
+  "libzim>=3.5",
 ]
 
 [project.scripts]
 delphi-bot = "bot.oracle_bot:main"
 delphi-build-index = "ingest.build_index:main"
+delphi-extract-zim = "ingest.extract_zim:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,7 +1,7 @@
 [Unit]
 Description=Delphi-42 Meshtastic oracle bot
-After=local-fs.target
-Requires=local-fs.target
+After=local-fs.target llm-openai-api.service
+Wants=local-fs.target llm-openai-api.service
 
 [Service]
 Type=simple

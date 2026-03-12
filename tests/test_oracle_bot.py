@@ -69,7 +69,6 @@ knowledge:
   index_path: {index_path}
 llm:
   backend: deterministic
-  model_path: models/ignored.gguf
 """.strip(),
         encoding="utf-8",
     )
@@ -80,5 +79,64 @@ llm:
     )
 
     bot = build_oracle_bot(config_path, logger=logging.getLogger("test.bootstrap"))
+
+    assert isinstance(bot.radio, DryRunRadio)
+
+
+def test_build_oracle_bot_wires_runtime_zim_fallback_when_enabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    documents = [
+        ExtractedDocument(
+            title="Water Purification",
+            source_id="water.txt",
+            text="Boil water for one minute before drinking.",
+        )
+    ]
+    index_path = tmp_path / "data/index/oracle.db"
+    SQLiteIndexBuilder(index_path).build(build_chunks(documents))
+
+    zim_dir = tmp_path / "data/library/zim"
+    zim_dir.mkdir(parents=True)
+    (zim_dir / "medical.zim").write_bytes(b"zim")
+
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        f"""
+node_name: test-node
+radio:
+  device: /dev/ttyUSB0
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: {zim_dir}
+  runtime_zim_fallback_enabled: true
+  runtime_zim_allowlist:
+    - medical.zim
+llm:
+  backend: deterministic
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "bot.oracle_bot.MeshtasticRadioClient",
+        lambda device_path, channel=0: DryRunRadio(),
+    )
+    monkeypatch.setattr(
+        "bot.oracle_bot.RuntimeZimRetriever",
+        lambda zim_dir, allowlist, default_limit=3: KeywordRetriever(
+            [
+                RetrievalChunk(
+                    title="Fallback",
+                    snippet="Fallback knowledge from ZIM.",
+                    source=f"{allowlist[0]}:A/Fallback.html",
+                )
+            ]
+        ),
+    )
+
+    bot = build_oracle_bot(config_path, logger=logging.getLogger("test.zim-bootstrap"))
 
     assert isinstance(bot.radio, DryRunRadio)

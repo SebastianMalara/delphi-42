@@ -4,7 +4,7 @@
 - Audience: AI, ingest, and project leads.
 - Owner: AI Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: ../overview/scope_and_non_goals.md, ingestion_and_indexing.md, ../project/adrs/0004-corpus-scope.md
 - Exit Criteria: The team can stage a prototype corpus with clear inclusion and exclusion rules.
 
@@ -37,10 +37,14 @@ Prototype v1 prioritizes high-value, low-ambiguity content:
 
 - keep a curated plaintext corpus for essential answers
 - support Kiwix/ZIM for larger on-site browsing collections
+- derive selected retrieval-ready plaintext from chosen ZIM sources instead of querying Kiwix live at answer time
 - treat the retrieval corpus and the browse corpus as related but not necessarily identical
+- Whisplay-style RAG stacks may inform implementation patterns, but Delphi-42 keeps Meshtastic plus Kiwix as the controlling product shape
 
 ## Update Cadence
 
 - bench refresh during development
 - planned content refresh before each field trial
 - no autonomous live sync in Prototype v1
+- Kiwix software and ZIM content are operator-refreshable after the first install by replacing or adding ZIMs and rebuilding derived artifacts
+- the Delphi-42 baseline assumes self-managed Kiwix software and public ZIM distribution, not paid turnkey images or hosted services

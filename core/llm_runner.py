@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Any, Callable, Protocol
 
 
 NO_GROUNDED_ANSWER = "The archive does not contain a grounded answer yet."
@@ -16,63 +16,134 @@ class ModelExecutionError(RuntimeError):
     """Raised when a model backend fails during generation."""
 
 
+@dataclass(frozen=True)
+class AnswerDraft:
+    short_answer: str
+    extended_answer: str
+
+
 class LLMRunner(Protocol):
-    def generate(self, prompt: str, max_words: int = 40) -> str:
+    def generate(self, prompt: str) -> AnswerDraft:
         ...
 
 
 class RuleBasedRunner:
     """Deterministic fallback that summarizes the first retrieved passage."""
 
-    def generate(self, prompt: str, max_words: int = 40) -> str:
+    def generate(self, prompt: str) -> AnswerDraft:
         context = _extract_context(prompt)
         if not context or context == "(no matching passages)":
-            return NO_GROUNDED_ANSWER
+            return AnswerDraft(NO_GROUNDED_ANSWER, NO_GROUNDED_ANSWER)
+
         first_line = context.splitlines()[0].removeprefix("- ").strip()
-        return truncate_words(first_line, max_words)
+        return AnswerDraft(short_answer=first_line, extended_answer=first_line)
 
 
-class LlamaCppRunner:
-    """High-level llama.cpp runner using llama-cpp-python when available."""
+class AXCLOpenAIRunner:
+    """OpenAI-compatible local runner for the M5 StackFlow API."""
 
-    def __init__(self, model_path: Path) -> None:
-        if not model_path.exists():
-            raise ModelUnavailableError(f"Configured GGUF model is missing: {model_path}")
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        api_key: str = "sk-",
+        timeout_seconds: int = 45,
+        client_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self.base_url = base_url
+        self.model = model
+        self.api_key = api_key
+        self.timeout_seconds = timeout_seconds
+
+        if client_factory is None:
+            try:
+                from openai import OpenAI
+            except ImportError as exc:
+                raise ModelUnavailableError(
+                    "openai is not installed; install the optional llm dependency."
+                ) from exc
+            client_factory = OpenAI
 
         try:
-            from llama_cpp import Llama
-        except ImportError as exc:
-            raise ModelUnavailableError(
-                "llama-cpp-python is not installed; install the optional llm dependency."
-            ) from exc
-
-        self.model_path = model_path
-        try:
-            self._llm = Llama(model_path=str(model_path))
-        except Exception as exc:  # pragma: no cover - depends on native runtime state
-            raise ModelUnavailableError(
-                f"Failed to initialize llama.cpp model from {model_path}"
-            ) from exc
-
-    def generate(self, prompt: str, max_words: int = 40) -> str:
-        try:
-            output = self._llm(
-                prompt,
-                max_tokens=max(max_words * 3, 32),
-                stop=["\nQuestion:", "\nContext:"],
-                echo=False,
+            self._client = client_factory(
+                base_url=self.base_url,
+                api_key=self.api_key,
+                timeout=self.timeout_seconds,
             )
-        except Exception as exc:  # pragma: no cover - depends on native runtime state
-            raise ModelExecutionError("llama.cpp generation failed") from exc
+        except Exception as exc:
+            raise ModelUnavailableError("Failed to initialize local OpenAI client") from exc
+
+        self._preflight_model()
+
+    def generate(self, prompt: str) -> AnswerDraft:
+        try:
+            output = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+        except Exception as exc:
+            raise ModelExecutionError("AX8850 chat completion failed") from exc
 
         try:
-            text = output["choices"][0]["text"].strip()
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ModelExecutionError("llama.cpp returned an unexpected response shape") from exc
+            message = output.choices[0].message
+            text = _coerce_content(getattr(message, "content", ""))
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise ModelExecutionError("OpenAI-compatible API returned an unexpected shape") from exc
 
         if not text:
-            raise ModelExecutionError("llama.cpp returned an empty completion")
-        return truncate_words(text, max_words)
+            raise ModelExecutionError("OpenAI-compatible API returned an empty completion")
+
+        return parse_answer_draft(text)
+
+    def _preflight_model(self) -> None:
+        try:
+            response = self._client.models.list()
+        except Exception as exc:
+            raise ModelUnavailableError("Local OpenAI-compatible API is unavailable") from exc
+
+        models = [getattr(model, "id", "") for model in getattr(response, "data", [])]
+        if not models:
+            raise ModelUnavailableError("Local OpenAI-compatible API returned no models")
+        if self.model not in models:
+            raise ModelUnavailableError(
+                f"Configured model '{self.model}' is not available from the local API"
+            )
+
+
+def parse_answer_draft(text: str) -> AnswerDraft:
+    raw = " ".join(text.strip().split())
+    if not raw:
+        raise ModelExecutionError("Model returned an empty answer draft")
+
+    short_marker = "SHORT:"
+    long_marker = "LONG:"
+    if short_marker in text and long_marker in text:
+        short_part = text.split(short_marker, maxsplit=1)[1].split(long_marker, maxsplit=1)[0]
+        long_part = text.split(long_marker, maxsplit=1)[1]
+        short = " ".join(short_part.strip().split())
+        extended = " ".join(long_part.strip().split())
+        if short or extended:
+            return AnswerDraft(short_answer=short or extended, extended_answer=extended or short)
+
+    return AnswerDraft(short_answer=raw, extended_answer=raw)
+
+
+def _coerce_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            text = getattr(item, "text", None)
+            if isinstance(text, str):
+                parts.append(text)
+        return " ".join(part.strip() for part in parts if part and part.strip())
+    return str(content).strip()
 
 
 def _extract_context(prompt: str) -> str:
@@ -81,10 +152,3 @@ def _extract_context(prompt: str) -> str:
     if marker not in prompt or question_marker not in prompt:
         return ""
     return prompt.split(marker, maxsplit=1)[1].split(question_marker, maxsplit=1)[0].strip()
-
-
-def truncate_words(text: str, max_words: int) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text
-    return " ".join(words[:max_words]).rstrip(".,;:") + "..."

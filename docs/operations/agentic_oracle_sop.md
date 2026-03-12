@@ -4,7 +4,7 @@
 - Audience: Engineering, operations, and QA.
 - Owner: AI Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: ../ai/retrieval_and_response_policy.md, ../architecture/runtime_flows.md, ../../core/oracle_service.py
 - Exit Criteria: The runtime behavior of the oracle is specific enough to guide implementation, tests, and operations.
 
@@ -14,6 +14,7 @@
 - private answers only
 - no public location disclosure
 - short responses for mesh reliability
+- deterministic packet sizing instead of trusting model-side length control
 - deterministic fallback over invented answers
 
 ## Runtime Roles
@@ -21,14 +22,15 @@
 - radio handler: receive and route Meshtastic packets
 - intent handler: normalize commands and protect command boundaries
 - retriever: search the local index only
-- synthesis layer: generate short grounded answers from retrieved text
+- synthesis layer: generate grounded short and extended drafts from retrieved text
+- packet formatter: enforce the radio-safe answer bundle contract
 - safety policy: block public leaks and ungrounded responses
 
 ## Supported Behaviors
 
 - `help`: respond immediately with command list
 - `where` and `pos`: return confirmation plus private position packet
-- `ask <question>`: retrieve local material, build bounded prompt, return short grounded answer
+- `ask <question>`: retrieve local material, build bounded prompt, return an ultra-short grounded answer plus optional bounded continuation packets
 
 ## Required Guardrails
 
@@ -36,7 +38,8 @@
 - never broadcast coordinates
 - declare insufficient context when retrieval is weak
 - keep logs privacy-safe by default
-- keep the system useful when the model path fails by falling back to deterministic summaries where possible
+- keep the system useful when the local API or configured model fails by falling back to deterministic summaries where possible
+- keep the first packet under 120 characters and the continuation under 3 packets of 600 characters each
 
 ## Operator Notes
 

@@ -9,14 +9,16 @@ from .intent import IntentType, classify_command
 from .llm_runner import (
     ARCHIVE_UNAVAILABLE,
     NO_GROUNDED_ANSWER,
+    AnswerDraft,
     LLMRunner,
     ModelExecutionError,
     ModelUnavailableError,
     RuleBasedRunner,
-    truncate_words,
 )
 from .prompt_builder import build_prompt
+from .reply_formatter import format_answer_packets
 from .retriever import NullRetriever, RetrievalChunk, Retriever
+from .runtime_config import ReplyConfig
 
 
 class ReplyMode(str, Enum):
@@ -30,10 +32,14 @@ class ReplyMode(str, Enum):
 
 @dataclass(frozen=True)
 class OracleReply:
-    text: str
+    packets: tuple[str, ...]
     share_position: bool = False
     mode: ReplyMode = ReplyMode.HELP
     retrieval_hits: int = 0
+
+    @property
+    def text(self) -> str:
+        return self.packets[0] if self.packets else ""
 
 
 class OracleService:
@@ -43,25 +49,27 @@ class OracleService:
         self,
         retriever: Retriever | None = None,
         llm: LLMRunner | None = None,
-        max_words: int = 40,
+        reply_config: ReplyConfig | None = None,
         fallback_llm: LLMRunner | None = None,
+        fallback_retriever: Retriever | None = None,
         retrieval_limit: int = 3,
     ) -> None:
         self.retriever = retriever or NullRetriever()
         self.llm = llm
-        self.max_words = max_words
+        self.reply_config = reply_config or ReplyConfig()
         self.fallback_llm = fallback_llm or RuleBasedRunner()
+        self.fallback_retriever = fallback_retriever
         self.retrieval_limit = retrieval_limit
 
     def handle(self, command: ParsedCommand) -> OracleReply:
         intent = classify_command(command)
 
         if intent.kind is IntentType.HELP:
-            return OracleReply(text=HELP_TEXT.strip(), mode=ReplyMode.HELP)
+            return self._single_packet(HELP_TEXT.strip(), mode=ReplyMode.HELP)
 
         if intent.kind in {IntentType.LOCATION, IntentType.POSITION}:
             return OracleReply(
-                text="Sending a private position packet.",
+                packets=("Sending a private position packet.",),
                 share_position=True,
                 mode=ReplyMode.POSITION,
             )
@@ -69,17 +77,24 @@ class OracleService:
         if intent.kind is IntentType.ASK and intent.question:
             return self._handle_ask(intent.question)
 
-        return OracleReply(
-            text="Send `help` for commands or `ask <question>` for counsel.",
+        return self._single_packet(
+            "Send `help` for commands or `ask <question>` for counsel.",
             mode=ReplyMode.HELP,
         )
 
     def _handle_ask(self, question: str) -> OracleReply:
         context = self.retriever.search(question, limit=self.retrieval_limit)
+        if not self._has_grounding(context) and self.fallback_retriever is not None:
+            fallback_context = self.fallback_retriever.search(
+                question, limit=self.retrieval_limit
+            )
+            if self._has_grounding(fallback_context):
+                context = fallback_context
+
         retrieval_hits = len(context)
         if not self._has_grounding(context):
             return OracleReply(
-                text=NO_GROUNDED_ANSWER,
+                packets=(NO_GROUNDED_ANSWER,),
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
                 retrieval_hits=retrieval_hits,
             )
@@ -87,13 +102,15 @@ class OracleService:
         prompt = build_prompt(
             question=question,
             context_chunks=context,
-            max_words=self.max_words,
+            short_max_chars=self.reply_config.short_max_chars,
+            continuation_max_chars=self.reply_config.continuation_max_chars,
+            max_continuation_packets=self.reply_config.max_continuation_packets,
         )
         if self.llm is not None:
             try:
-                text = self.llm.generate(prompt, max_words=self.max_words)
+                draft = self.llm.generate(prompt)
                 return OracleReply(
-                    text=truncate_words(text, self.max_words),
+                    packets=self._format_packets(draft),
                     mode=ReplyMode.MODEL,
                     retrieval_hits=retrieval_hits,
                 )
@@ -101,26 +118,47 @@ class OracleService:
                 pass
 
         try:
-            fallback_text = self.fallback_llm.generate(prompt, max_words=self.max_words)
+            fallback_draft = self.fallback_llm.generate(prompt)
         except Exception:
-            return OracleReply(
-                text=ARCHIVE_UNAVAILABLE,
+            return self._single_packet(
+                ARCHIVE_UNAVAILABLE,
                 mode=ReplyMode.ARCHIVE_UNAVAILABLE,
                 retrieval_hits=retrieval_hits,
             )
 
-        if fallback_text == NO_GROUNDED_ANSWER:
-            return OracleReply(
-                text=fallback_text,
+        if fallback_draft.short_answer == NO_GROUNDED_ANSWER:
+            return self._single_packet(
+                NO_GROUNDED_ANSWER,
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
                 retrieval_hits=retrieval_hits,
             )
 
         return OracleReply(
-            text=truncate_words(fallback_text, self.max_words),
+            packets=self._format_packets(fallback_draft),
             mode=ReplyMode.DETERMINISTIC_FALLBACK,
             retrieval_hits=retrieval_hits,
         )
 
     def _has_grounding(self, context: list[RetrievalChunk]) -> bool:
         return any(chunk.snippet.strip() and chunk.matched_terms >= 1 for chunk in context)
+
+    def _format_packets(self, draft: AnswerDraft) -> tuple[str, ...]:
+        return format_answer_packets(
+            draft,
+            short_max_chars=self.reply_config.short_max_chars,
+            continuation_max_chars=self.reply_config.continuation_max_chars,
+            max_continuation_packets=self.reply_config.max_continuation_packets,
+        )
+
+    def _single_packet(
+        self,
+        text: str,
+        *,
+        mode: ReplyMode,
+        retrieval_hits: int = 0,
+    ) -> OracleReply:
+        return OracleReply(
+            packets=(text,),
+            mode=mode,
+            retrieval_hits=retrieval_hits,
+        )

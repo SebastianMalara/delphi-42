@@ -8,7 +8,9 @@ from .retriever import RetrievalChunk
 def build_prompt(
     question: str,
     context_chunks: Sequence[RetrievalChunk],
-    max_words: int = 40,
+    short_max_chars: int = 120,
+    continuation_max_chars: int = 600,
+    max_continuation_packets: int = 3,
 ) -> str:
     """Build a compact grounding prompt for a local model."""
     if context_chunks:
@@ -22,9 +24,15 @@ def build_prompt(
     context_block = "\n".join(context_lines)
     return (
         "You are Delphi-42, an offline oracle node.\n"
-        f"Word limit: {max_words} words.\n"
         "Only answer from the provided local context.\n"
         "If the context is insufficient, say that the archive does not contain a grounded answer.\n\n"
+        "Return exactly this format:\n"
+        "SHORT: <one-line direct answer>\n"
+        "LONG:\n"
+        "<full grounded answer>\n\n"
+        f"SHORT must target {short_max_chars} characters or less.\n"
+        f"LONG must be suitable for splitting into at most {max_continuation_packets} packets of {continuation_max_chars} characters.\n"
+        "Do not include markdown, bullet lists, or extra headings.\n\n"
         f"Context:\n{context_block}\n\n"
         f"Question:\n{question}\n"
     )

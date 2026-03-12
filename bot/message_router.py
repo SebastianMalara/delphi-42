@@ -39,9 +39,10 @@ class MessageRouter:
         responses = [
             OutboundMessage(
                 destination=message.sender_id,
-                text=reply.text,
+                text=packet,
                 channel=message.channel,
             )
+            for packet in reply.packets
         ]
         if reply.share_position:
             responses.append(
