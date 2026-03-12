@@ -63,3 +63,6 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-016 | missing local model service or model package degrades to deterministic answers | Unit | local dev | AI Lead | `pytest` output |
 | TM-017 | runtime `.zim` fallback triggers only after SQLite misses and stays bounded to the allowlist | Unit | local dev | AI Lead | `pytest` output |
 | TM-018 | `extract_zim` writes normalized plaintext from allowlisted archives | Unit | local dev | AI Lead | `pytest` output |
+| TM-019 | `compose.dev` starts `oracle-app`, `oracle-indexer`, and `mock-openai` with a working sample corpus | Integration | local dev | Software Lead | compose smoke log |
+| TM-020 | `oracle-app` in Pi Compose can reach host `llm-openai-api` through the configured host alias | System | Pi bench | Ops Lead | container networking note |
+| TM-021 | simulated radio console can exercise `help`, `where`, and `ask` without hardware | Integration | local dev | Software Lead | console smoke note |

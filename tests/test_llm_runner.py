@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.llm_runner import AXCLOpenAIRunner, ModelExecutionError, ModelUnavailableError
+from core.llm_runner import ModelExecutionError, ModelUnavailableError, OpenAICompatibleRunner
 
 
 class FakeClient:
@@ -28,7 +28,7 @@ class FakeClient:
 
 
 def test_axcl_openai_runner_preflights_model_and_parses_answer() -> None:
-    runner = AXCLOpenAIRunner(
+    runner = OpenAICompatibleRunner(
         base_url="http://127.0.0.1:8000/v1",
         model="qwen3-1.7B-Int8-ctx-axcl",
         client_factory=lambda **_: FakeClient(
@@ -45,7 +45,7 @@ def test_axcl_openai_runner_preflights_model_and_parses_answer() -> None:
 
 def test_axcl_openai_runner_rejects_missing_model() -> None:
     with pytest.raises(ModelUnavailableError, match="Configured model"):
-        AXCLOpenAIRunner(
+        OpenAICompatibleRunner(
             base_url="http://127.0.0.1:8000/v1",
             model="qwen3-1.7B-Int8-ctx-axcl",
             client_factory=lambda **_: FakeClient(
@@ -56,7 +56,7 @@ def test_axcl_openai_runner_rejects_missing_model() -> None:
 
 
 def test_axcl_openai_runner_rejects_empty_completion() -> None:
-    runner = AXCLOpenAIRunner(
+    runner = OpenAICompatibleRunner(
         base_url="http://127.0.0.1:8000/v1",
         model="qwen3-1.7B-Int8-ctx-axcl",
         client_factory=lambda **_: FakeClient(

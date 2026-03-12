@@ -10,7 +10,7 @@
 
 ## Context
 
-The current repository is a Python-first scaffold and the architecture follows that shape. Prototype v1 uses a small number of explicit subsystems rather than a dynamic multi-agent orchestration model.
+The current repository is a Python-first scaffold and the architecture follows that shape. Prototype v1 uses a small number of explicit subsystems rather than a dynamic multi-agent orchestration model. The portable runtime is now packaged container-first for local development and Pi deployment, while the M5 StackFlow model service remains host-managed on Raspberry Pi.
 
 ## Components
 
@@ -33,6 +33,9 @@ The current repository is a Python-first scaffold and the architecture follows t
   - SQLite FTS index construction
 - `config/`
   - YAML runtime configuration
+- container packaging
+  - multi-arch app image
+  - Compose profiles for development and Pi deployment
 - `systemd/`
   - service wrappers for deployment on Raspberry Pi
 
@@ -41,11 +44,11 @@ The current repository is a Python-first scaffold and the architecture follows t
 - `bot` calls `core.oracle_service` with canonical parsed commands.
 - `core` depends on retriever and model interfaces, not on radio details.
 - `ingest` produces the persistent index consumed by `core`.
-- `config/oracle.yaml` configures radio path, privacy rules, knowledge paths, hotspot data, model service endpoint, and reply limits.
+- `config/oracle*.yaml` configures radio transport, privacy rules, knowledge paths, model service endpoint, and reply limits.
 
 ## Data/Control Flow
 
-1. `bot` receives or simulates inbound messages.
+1. `bot` receives or simulates inbound messages, depending on configured radio transport.
 2. `command_parser` converts text to a canonical command.
 3. `oracle_service` classifies intent and chooses help, position, or ask handling.
 4. On `ask`, retrieval runs before prompt construction.
@@ -59,6 +62,8 @@ The current repository is a Python-first scaffold and the architecture follows t
 - Ingest and retrieval drift causing queries to miss intended content
 - LLM backend failure causing silent answer loss unless fallback is enforced
 - Misconfiguration of the local model service, selected model, or index path causing runtime degradation
+- Container networking or host alias drift preventing the app container from reaching the host-local model API on Pi
+- Volume or bind-mount drift causing the indexer and app container to see different corpus or index paths
 
 ## Security/Privacy Constraints
 
@@ -70,6 +75,7 @@ The current repository is a Python-first scaffold and the architecture follows t
 
 - Keep the retriever and model runner behind narrow interfaces so alternative backends can be swapped without rewriting the radio flow.
 - Treat the M5 StackFlow OpenAI-compatible API as the default v1 inference boundary rather than embedding a native accelerator SDK.
+- Treat `openai-compatible` as the canonical model backend contract; the AX8850 host service is one deployment of that interface.
 - Treat answer packet formatting as a core policy concern rather than radio-library glue code.
 - Avoid introducing asynchronous complexity unless the real radio integration requires it.
 - Treat the deterministic fallback as a first-class operational safety path, not just a test helper.

@@ -1,8 +1,8 @@
-node_name: delphi-42
+node_name: delphi-42-dev
 
 radio:
-  transport: meshtastic
-  device: /dev/ttyUSB0
+  transport: simulated
+  device: ""
   channel: 0
 
 privacy:
@@ -17,20 +17,17 @@ broadcasts:
     - SEEK WISDOM IN PRIVATE.
 
 knowledge:
-  plaintext_dir: data/library/plaintext
-  index_path: data/index/oracle.db
-  kiwix_url: http://127.0.0.1:8080
-  zim_dir: data/library/zim
+  plaintext_dir: sample_data/plaintext
+  index_path: artifacts/dev/oracle.db
+  kiwix_url: http://kiwix:8080
+  zim_dir: sample_data/zim
   runtime_zim_fallback_enabled: false
-  runtime_zim_allowlist:
-    - wikipedia_en_medicine_maxi_2023-12.zim
+  runtime_zim_allowlist: []
   runtime_zim_search_limit: 3
 
 llm:
-  # OpenAI-compatible local inference boundary. On Pi this usually points to the host
-  # M5 StackFlow service; in development it can point to a mock or Ollama endpoint.
   backend: openai-compatible
-  base_url: http://127.0.0.1:8000/v1
+  base_url: http://mock-openai:8000/v1
   model: qwen3-1.7B-Int8-ctx-axcl
   api_key: sk-
   timeout_seconds: 45
@@ -41,4 +38,4 @@ reply:
   max_continuation_packets: 3
 
 wifi:
-  ssid: DELPHI-42
+  ssid: DELPHI-42-DEV

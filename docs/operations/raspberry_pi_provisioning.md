@@ -35,10 +35,11 @@ sudo systemctl restart llm-openai-api
 
 5. Attach and mount the SSD at a stable path.
 6. Create the deployment directory, recommended as `/opt/delphi-42`.
-7. Copy repo contents or deploy a packaged checkout.
-8. Create and activate a virtual environment.
-9. Install the project in editable or packaged mode with required extras, including `zim` support.
-10. Validate the local model service before bot deployment:
+7. Install Docker Engine and the Compose plugin if the node will use the container-first runtime path.
+8. Copy repo contents or deploy a packaged checkout.
+9. If you need a native debug path, create and activate a virtual environment.
+10. If using the native debug path, install the project in editable or packaged mode with required extras, including `zim` support.
+11. Validate the local model service before bot deployment:
 
 ```bash
 curl http://127.0.0.1:8000/v1/models
@@ -50,7 +51,8 @@ curl http://127.0.0.1:8000/v1/models
 
 - `hostapd` and `dnsmasq` or equivalent for hotspot mode
 - Kiwix or equivalent archive server
-- `systemd` for service supervision
+- `systemd` for host service supervision
+- Docker Engine plus Compose for the portable runtime
 - `llm-openai-api` for local AX8850-backed generation
 
 ## Provisioning Validation

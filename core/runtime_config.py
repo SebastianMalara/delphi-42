@@ -12,7 +12,10 @@ DEFAULT_BROADCAST_MESSAGES = (
     "SEEK WISDOM IN PRIVATE.",
 )
 
-SUPPORTED_LLM_BACKENDS = {"axcl-openai", "deterministic"}
+OPENAI_COMPATIBLE_BACKEND = "openai-compatible"
+LEGACY_OPENAI_BACKEND = "axcl-openai"
+SUPPORTED_LLM_BACKENDS = {OPENAI_COMPATIBLE_BACKEND, LEGACY_OPENAI_BACKEND, "deterministic"}
+SUPPORTED_RADIO_TRANSPORTS = {"meshtastic", "simulated"}
 
 
 class ConfigError(ValueError):
@@ -21,6 +24,7 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class RadioConfig:
+    transport: str = "meshtastic"
     device: str = "/dev/ttyUSB0"
     channel: int = 0
 
@@ -50,7 +54,7 @@ class KnowledgeConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    backend: str = "axcl-openai"
+    backend: str = OPENAI_COMPATIBLE_BACKEND
     base_url: str = "http://127.0.0.1:8000/v1"
     model: str = "qwen3-1.7B-Int8-ctx-axcl"
     api_key: str = "sk-"
@@ -84,7 +88,8 @@ class OracleRuntimeConfig:
     def summary(self) -> str:
         return (
             f"node={self.node_name} "
-            f"radio_device={self.radio.device} "
+            f"radio_transport={self.radio.transport} "
+            f"radio_device={self.radio.device or '-'} "
             f"channel={self.radio.channel} "
             f"index={self.knowledge.index_path} "
             f"llm_backend={self.llm.backend} "
@@ -126,6 +131,9 @@ def load_runtime_config(
     config = OracleRuntimeConfig(
         node_name=str(raw_data.get("node_name", "delphi-42")).strip() or "delphi-42",
         radio=RadioConfig(
+            transport=str(
+                raw_data.get("radio", {}).get("transport", "meshtastic")
+            ).strip(),
             device=str(raw_data.get("radio", {}).get("device", "/dev/ttyUSB0")).strip(),
             channel=int(raw_data.get("radio", {}).get("channel", 0)),
         ),
@@ -174,7 +182,13 @@ def load_runtime_config(
             ),
         ),
         llm=LLMConfig(
-            backend=str(raw_data.get("llm", {}).get("backend", "axcl-openai")).strip(),
+            backend=_normalize_backend(
+                str(
+                    raw_data.get("llm", {}).get(
+                        "backend", OPENAI_COMPATIBLE_BACKEND
+                    )
+                ).strip()
+            ),
             base_url=str(
                 raw_data.get("llm", {}).get("base_url", "http://127.0.0.1:8000/v1")
             ).strip(),
@@ -232,9 +246,20 @@ def _parse_string_tuple(raw_values: list[str] | tuple[str, ...]) -> tuple[str, .
     return tuple(str(value).strip() for value in raw_values if str(value).strip())
 
 
+def _normalize_backend(backend: str) -> str:
+    if backend == LEGACY_OPENAI_BACKEND:
+        return OPENAI_COMPATIBLE_BACKEND
+    return backend
+
+
 def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
-    if not config.radio.device:
-        raise ConfigError("radio.device must not be empty.")
+    if config.radio.transport not in SUPPORTED_RADIO_TRANSPORTS:
+        raise ConfigError(
+            f"Unsupported radio.transport '{config.radio.transport}'. "
+            f"Supported values: {sorted(SUPPORTED_RADIO_TRANSPORTS)}"
+        )
+    if config.radio.transport == "meshtastic" and not config.radio.device:
+        raise ConfigError("radio.device must not be empty when radio.transport is meshtastic.")
     if config.radio.channel < 0:
         raise ConfigError("radio.channel must be 0 or greater.")
     if config.broadcasts.interval_minutes <= 0:
@@ -248,11 +273,11 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
             f"Unsupported llm.backend '{config.llm.backend}'. "
             f"Supported values: {sorted(SUPPORTED_LLM_BACKENDS)}"
         )
-    if config.llm.backend == "axcl-openai":
+    if config.llm.backend == OPENAI_COMPATIBLE_BACKEND:
         if not config.llm.base_url:
-            raise ConfigError("llm.base_url must not be empty for axcl-openai.")
+            raise ConfigError("llm.base_url must not be empty for openai-compatible.")
         if not config.llm.model:
-            raise ConfigError("llm.model must not be empty for axcl-openai.")
+            raise ConfigError("llm.model must not be empty for openai-compatible.")
     if config.llm.timeout_seconds <= 0:
         raise ConfigError("llm.timeout_seconds must be greater than 0.")
     if config.knowledge.runtime_zim_search_limit <= 0:

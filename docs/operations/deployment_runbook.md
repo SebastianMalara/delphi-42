@@ -8,13 +8,23 @@
 - Dependencies: raspberry_pi_provisioning.md, service_operations.md, ../architecture/interfaces_and_config.md
 - Exit Criteria: An operator can deploy a new node using this runbook without relying on tribal knowledge.
 
+## Preferred Packaging
+
+Prototype v1 now prefers container packaging for the portable runtime:
+
+- `oracle-app`, `oracle-indexer`, and `kiwix` run through `docker compose`
+- the M5 `llm-openai-api` remains host-managed on the Pi
+- use [`container_workflows.md`](container_workflows.md) for the default Mac and Pi Compose commands
+
 ## Deployment Steps
 
 1. Provision the Raspberry Pi using [`raspberry_pi_provisioning.md`](raspberry_pi_provisioning.md).
 2. Clone or copy the repository to `/opt/delphi-42`.
-3. Create `.venv` and run `pip install -e .[bot,llm,zim]`.
-4. Copy `config/oracle.example.yaml` to `config/oracle.yaml`.
-5. Set site-local values:
+3. Create the persistent data directories used by the Pi Compose profile:
+   - `data/library/plaintext`
+   - `data/library/zim`
+   - `data/index`
+4. Copy or adapt `config/oracle.pi.yaml` for site-local values:
    - radio device path
    - index and corpus paths
    - `knowledge.zim_dir`
@@ -45,24 +55,28 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{"model":"qwen3-1.7B-Int8-ctx-axcl","messages":[{"role":"user","content":"Reply with READY"}]}'
 ```
 
-10. Install `systemd` units and reload the daemon.
-11. Start the bot service and verify local logs.
-12. Validate one `help`, one `ask`, and one `where` flow before field deployment.
+10. Start the Compose stack:
+
+```bash
+docker compose -f compose.yaml -f compose.pi.yaml up --build -d
+```
+
+11. Validate one `help`, one `ask`, and one `where` flow before field deployment.
 
 ## Deployment Outputs
 
 - valid runtime config
 - present StackFlow model service and corpus
 - populated SQLite index
-- running bot service
+- running `oracle-app` container
 - reachable hotspot archive
 - aligned retrieval index derived from the staged answer corpus
 
 ## Rollback Rule
 
-If any deployment step fails after service install:
+If any deployment step fails after service start:
 
-- stop services
+- stop containers
 - restore previous config and data snapshot if available
 - verify radio and storage mounts
 - verify `llm-openai-api` health and visible model list

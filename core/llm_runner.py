@@ -39,8 +39,8 @@ class RuleBasedRunner:
         return AnswerDraft(short_answer=first_line, extended_answer=first_line)
 
 
-class AXCLOpenAIRunner:
-    """OpenAI-compatible local runner for the M5 StackFlow API."""
+class OpenAICompatibleRunner:
+    """OpenAI-compatible local runner for host-local inference services."""
 
     def __init__(
         self,
@@ -84,7 +84,7 @@ class AXCLOpenAIRunner:
                 temperature=0,
             )
         except Exception as exc:
-            raise ModelExecutionError("AX8850 chat completion failed") from exc
+            raise ModelExecutionError("OpenAI-compatible chat completion failed") from exc
 
         try:
             message = output.choices[0].message
@@ -110,6 +110,9 @@ class AXCLOpenAIRunner:
             raise ModelUnavailableError(
                 f"Configured model '{self.model}' is not available from the local API"
             )
+
+
+AXCLOpenAIRunner = OpenAICompatibleRunner
 
 
 def parse_answer_draft(text: str) -> AnswerDraft:

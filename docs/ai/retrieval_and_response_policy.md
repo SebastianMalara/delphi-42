@@ -52,7 +52,8 @@
 - retrieval backend: SQLite FTS built from curated plaintext and selected Kiwix-derived extracts
 - local model runtime: `StackFlow` OpenAI-compatible API served from the M5 AX8850 kit
 - default model: `qwen3-1.7B-Int8-ctx-axcl`
-- supported runtime backends: `axcl-openai` and `deterministic`
+- supported runtime backends: `openai-compatible` and `deterministic`
+- legacy compatibility alias: `axcl-openai` normalizes to `openai-compatible`
 - top-k context: 3 passages unless testing requires adjustment
 - default public broadcast interval: 90 minutes
 - Kiwix remains the browseable archive, while allowlisted direct `.zim` lookup acts only as a secondary retrieval source on SQLite misses

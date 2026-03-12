@@ -1,0 +1,49 @@
+services:
+  oracle-app:
+    environment:
+      DELPHI_CONFIG: /workspace/config/oracle.dev.yaml
+    depends_on:
+      oracle-indexer:
+        condition: service_completed_successfully
+      mock-openai:
+        condition: service_healthy
+
+  oracle-indexer:
+    command:
+      - python
+      - -m
+      - ingest.build_index
+      - --input-dir
+      - /workspace/sample_data/plaintext
+      - --db
+      - /workspace/artifacts/dev/oracle.db
+
+  mock-openai:
+    build:
+      context: .
+    image: delphi42:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command:
+      - python
+      - -m
+      - scripts.mock_openai_api
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import json, urllib.request;
+          data = json.load(urllib.request.urlopen("http://127.0.0.1:8000/v1/models"));
+          assert data["data"][0]["id"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"

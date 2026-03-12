@@ -21,6 +21,8 @@
 | R-007 | Documentation drifts from implementation | Medium | Medium | Project Lead | require docs update in related changes, run docs check script | broken links or stale procedures found | Open |
 | R-008 | Storage corruption or failed mounts break the node | High | Medium | Ops Lead | baseline uses a dedicated 1TB Crucial X9 SSD plus endurance microSD because the AX8850 consumes the PCIe path; add mount checks, spare SSD, and rebuild runbook before field release | missing index, missing corpus, or mount failure | Open |
 | R-009 | Third-party StackFlow apt repo or model packaging changes break reproducibility | Medium | Medium | Ops Lead | record apt source, installed package manifest, and known-good image; bench upgrades before field rollout | package install fails or model IDs drift unexpectedly | Open |
+| R-010 | Containerized Pi app cannot reach the host-local model API reliably | Medium | Medium | Ops Lead | standardize on `host.docker.internal:host-gateway`, test preflight from the container, and keep deterministic fallback active | `oracle-app` logs model API connection failures on Pi | Open |
+| R-011 | Containerized radio path behaves differently from native Meshtastic on reconnect or permission changes | High | Medium | Software Lead | add Pi Compose drills for `/dev/ttyUSB0`, test reconnect behavior, and keep simulated radio confined to development only | container loses access to the serial device or stops receiving after reconnect | Open |
 
 ## Milestone Review Note
 

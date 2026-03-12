@@ -10,12 +10,13 @@
 
 ## What To Back Up
 
-- `config/oracle.yaml`
+- site-local config derived from `config/oracle.pi.yaml`
 - `/etc/apt/sources.list.d/StackFlow.list`
 - installed StackFlow package manifest
 - operator notes and deployment metadata
 - curated plaintext corpus or a reproducible manifest of it
 - Kiwix ZIM manifest and local archive inventory
+- Compose overrides or environment files used on the Pi
 - benchmark and field-evaluation artifacts
 
 Generated artifacts such as the SQLite index can be rebuilt and do not need to be the primary backup target if source corpus, config, and StackFlow package state are preserved.
@@ -30,7 +31,7 @@ Generated artifacts such as the SQLite index can be rebuilt and do not need to b
 6. restore or restage Kiwix ZIM content if needed
 7. restage curated corpus or derived extracts if needed
 8. rebuild index
-9. start services
+9. start containers and host services
 10. validate `help`, `ask`, `where`, and hotspot archive access
 
 ## Upgrade Policy

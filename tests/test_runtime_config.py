@@ -11,6 +11,7 @@ def test_load_runtime_config_applies_defaults_and_resolves_paths(tmp_path: Path)
         """
 node_name: test-node
 radio:
+  transport: meshtastic
   device: /dev/ttyUSB1
 knowledge:
   plaintext_dir: data/library/plaintext
@@ -22,9 +23,10 @@ knowledge:
     config = load_runtime_config(config_path, root_dir=tmp_path)
 
     assert config.node_name == "test-node"
+    assert config.radio.transport == "meshtastic"
     assert config.radio.device == "/dev/ttyUSB1"
     assert config.privacy.answer_public_messages is False
-    assert config.llm.backend == "axcl-openai"
+    assert config.llm.backend == "openai-compatible"
     assert config.llm.base_url == "http://127.0.0.1:8000/v1"
     assert config.llm.model == "qwen3-1.7B-Int8-ctx-axcl"
     assert config.reply.short_max_chars == 120
@@ -61,6 +63,52 @@ llm:
 
     with pytest.raises(ConfigError, match="Unsupported llm.backend"):
         load_runtime_config(config_path, root_dir=tmp_path)
+
+
+def test_load_runtime_config_rejects_unsupported_radio_transport(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+radio:
+  transport: satellite
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="Unsupported radio.transport"):
+        load_runtime_config(config_path, root_dir=tmp_path)
+
+
+def test_load_runtime_config_accepts_legacy_backend_alias(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+llm:
+  backend: axcl-openai
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_runtime_config(config_path, root_dir=tmp_path)
+
+    assert config.llm.backend == "openai-compatible"
+
+
+def test_load_runtime_config_allows_simulated_transport_without_device(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+radio:
+  transport: simulated
+  device: ""
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_runtime_config(config_path, root_dir=tmp_path)
+
+    assert config.radio.transport == "simulated"
+    assert config.radio.device == ""
 
 
 def test_load_runtime_config_rejects_invalid_reply_limits(tmp_path: Path) -> None:

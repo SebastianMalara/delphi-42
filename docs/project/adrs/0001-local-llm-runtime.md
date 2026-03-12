@@ -20,6 +20,7 @@ Prototype v1 uses the M5 `StackFlow` local OpenAI-compatible API as the default 
 
 - aligns the hardware, provisioning, and runtime stack around one supported accelerator path
 - keeps Python integration simple by using an OpenAI-compatible HTTP client boundary
+- allows the Delphi app itself to remain generic and container-friendly while the AX8850 runtime stays host-managed on the Pi
 - supports deterministic fallback if the local API or model package is unavailable
 - removes site-local model file management from the v1 runtime contract
 - ties reproducibility to the M5 apt repository and package availability

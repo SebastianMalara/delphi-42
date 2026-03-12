@@ -15,7 +15,7 @@ The strategy covers:
 - command parsing and privacy behavior
 - retrieval and answer policy
 - ingest and indexing
-- service startup and recovery
+- container startup and recovery
 - hotspot/archive availability
 - field validation on prototype hardware
 
@@ -28,7 +28,7 @@ The strategy covers:
 
 ## Environments
 
-- developer laptop for unit and fast integration tests
+- developer laptop with Docker/OrbStack for unit and fast integration tests
 - Raspberry Pi bench node for system validation
 - field deployment environment for radio, power, and hotspot behavior
 
@@ -36,6 +36,7 @@ The strategy covers:
 
 - representative direct-message commands
 - curated plaintext corpus for deterministic retrieval tests
+- repo-tracked sample corpus for Compose workflows
 - example runtime config
 - prototype hardware kit with radio, SSD, battery, and hotspot stack
 
@@ -48,6 +49,7 @@ The strategy covers:
 ## Evidence
 
 - `pytest` output
+- `docker compose` logs and health checks
 - documented benchmark prompts and expected outcomes
 - service logs with sensitive data redacted
 - signed-off field protocol results

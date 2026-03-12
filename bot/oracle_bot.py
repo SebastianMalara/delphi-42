@@ -5,14 +5,14 @@ import os
 import time
 from pathlib import Path
 
-from core.llm_runner import AXCLOpenAIRunner, LLMRunner, ModelUnavailableError
+from core.llm_runner import LLMRunner, ModelUnavailableError, OpenAICompatibleRunner
 from core.oracle_service import OracleService
 from core.retriever import SQLiteRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig, load_runtime_config
 from core.zim_retriever import RuntimeZimRetriever
 
 from .message_router import MessageRouter, RoutedReply
-from .radio_interface import MeshtasticRadioClient, OutboundMessage, RadioClient
+from .radio_interface import DryRunRadio, MeshtasticRadioClient, RadioClient
 
 
 LOGGER = logging.getLogger("delphi42.bot")
@@ -89,14 +89,25 @@ def build_oracle_bot(
     logger = logger or LOGGER
     config = load_config(config_path)
     config.validate_for_bot()
+    logger.info("loaded config %s", config.summary())
 
+    router = build_router(config, logger=logger)
+    radio = build_radio(config, logger=logger)
+    return OracleBot(radio=radio, router=router, logger=logger)
+
+
+def build_router(
+    config: OracleRuntimeConfig,
+    *,
+    logger: logging.Logger | None = None,
+) -> MessageRouter:
+    logger = logger or LOGGER
     retriever = SQLiteRetriever(config.knowledge.index_path)
     fallback_retriever = _build_zim_retriever(config, logger)
-    logger.info("loaded config %s", config.summary())
     logger.info("loaded retriever index=%s", config.knowledge.index_path)
 
     llm = _build_llm_runner(config, logger)
-    router = MessageRouter(
+    return MessageRouter(
         OracleService(
             retriever=retriever,
             llm=llm,
@@ -104,11 +115,27 @@ def build_oracle_bot(
             fallback_retriever=fallback_retriever,
         )
     )
-    radio = MeshtasticRadioClient(
+
+
+def build_radio(
+    config: OracleRuntimeConfig,
+    *,
+    logger: logging.Logger | None = None,
+) -> RadioClient:
+    logger = logger or LOGGER
+    if config.radio.transport == "simulated":
+        logger.info("using simulated radio transport")
+        return DryRunRadio()
+
+    logger.info(
+        "using meshtastic radio transport device=%s channel=%s",
+        config.radio.device,
+        config.radio.channel,
+    )
+    return MeshtasticRadioClient(
         config.radio.device,
         channel=config.radio.channel,
     )
-    return OracleBot(radio=radio, router=router, logger=logger)
 
 
 def _build_llm_runner(
@@ -120,7 +147,7 @@ def _build_llm_runner(
         return None
 
     try:
-        runner = AXCLOpenAIRunner(
+        runner = OpenAICompatibleRunner(
             base_url=config.llm.base_url,
             model=config.llm.model,
             api_key=config.llm.api_key,

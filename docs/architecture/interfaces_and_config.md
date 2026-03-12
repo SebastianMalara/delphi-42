@@ -10,7 +10,7 @@
 
 ## Context
 
-Prototype v1 exposes a deliberately small interface surface: a few DM commands, one YAML config file, one index-build entrypoint, two starter `systemd` units, and one host-local OpenAI-compatible model service.
+Prototype v1 exposes a deliberately small interface surface: a few DM commands, YAML config profiles, local entrypoints, container services, and one host-local OpenAI-compatible model service on Pi.
 
 ## Components
 
@@ -35,6 +35,7 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 | Entry Point | Purpose |
 | --- | --- |
 | `python -m bot.oracle_bot` | Start the bot loop |
+| `python -m bot.dev_console` | Start the simulated-radio development console |
 | `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...` | Export curated `.zim` content into staged plaintext |
 | `python -m ingest.build_index --input-dir ... --db ...` | Build or rebuild the SQLite FTS index |
 
@@ -45,32 +46,42 @@ Current config keys from `config/oracle.example.yaml`:
 | Section | Key | Meaning |
 | --- | --- | --- |
 | top level | `node_name` | Human-readable node name |
-| `radio` | `device`, `channel` | Radio device path and channel |
+| `radio` | `transport`, `device`, `channel` | Radio transport, device path, and channel |
 | `privacy` | `answer_public_messages`, `share_position_publicly` | Safety flags that should stay `false` in Prototype v1 |
 | `broadcasts` | `interval_minutes`, `messages` | Public discovery behavior |
 | `knowledge` | `plaintext_dir`, `index_path`, `kiwix_url`, `zim_dir`, `runtime_zim_fallback_enabled`, `runtime_zim_allowlist`, `runtime_zim_search_limit` | Corpus, index, browse-archive locations, and bounded runtime `.zim` fallback policy |
-| `llm` | `backend`, `base_url`, `model`, `api_key`, `timeout_seconds` | Local AX8850-backed model runtime over the StackFlow OpenAI-compatible API |
+| `llm` | `backend`, `base_url`, `model`, `api_key`, `timeout_seconds` | OpenAI-compatible local model runtime settings |
 | `reply` | `short_max_chars`, `continuation_max_chars`, `max_continuation_packets` | Deterministic packet contract enforced in application logic |
 | `wifi` | `ssid` | Local hotspot name |
 
 Current implementation note:
 
-- Prototype v1 accepts only `axcl-openai` and `deterministic` as runtime backends.
+- Prototype v1 accepts `openai-compatible` and `deterministic` as runtime backends.
+- The legacy backend name `axcl-openai` is accepted as a compatibility alias and normalized to `openai-compatible`.
 - The configured API key is a local placeholder contract for the OpenAI client and may remain `sk-` unless the local service is hardened differently.
+- `config/oracle.dev.yaml` is the default simulated-radio dev profile.
+- `config/oracle.pi.yaml` is the default Pi Compose profile.
 
 ### Service Interfaces
 
 | Service | Trigger | Responsibility |
 | --- | --- | --- |
-| `oracle-bot.service` | long-running | Run the Meshtastic-facing bot process |
-| `oracle-core.service` | oneshot/manual or scheduled | Rebuild the local index from plaintext |
+| `oracle-app` | long-running container | Run the bot process in Compose |
+| `oracle-indexer` | oneshot container | Rebuild the local index from plaintext |
+| `oracle-bot.service` | long-running host service | Legacy host-managed bot wrapper for non-container Pi deployments |
+| `oracle-core.service` | oneshot/manual or scheduled | Legacy host-managed index rebuild wrapper |
+| `kiwix` | container or host service | Expose mounted `.zim` files over local HTTP |
 | `llm-openai-api.service` | host service | Expose the AX8850-backed local chat and model endpoints on loopback |
 
 ### File And Directory Interfaces
 
 | Path Class | Expected Use |
 | --- | --- |
-| `config/oracle.yaml` | site-local runtime configuration, copied from example |
+| `config/oracle.example.yaml` | generic reference configuration |
+| `config/oracle.dev.yaml` | simulated-radio development config |
+| `config/oracle.pi.yaml` | Pi Compose runtime config |
+| `compose.yaml`, `compose.dev.yaml`, `compose.pi.yaml` | portable runtime packaging and environment overlays |
+| `sample_data/plaintext` | repo-tracked sample corpus for local development |
 | `data/library/plaintext` | staged plaintext corpus |
 | `data/library/zim` | optional staged ZIM files or archive source mount |
 | `data/index/oracle.db` | generated SQLite FTS database |
@@ -88,12 +99,14 @@ Current implementation note:
 ## Failure Modes
 
 - Config paths diverge from actual mount points
+- `radio.transport` does not match the intended environment
 - Operators enable unsafe privacy flags
 - Service units point to paths that do not exist on the target Pi
 - Corpus rebuild path and bot runtime path drift apart
 - Operators refresh Kiwix content without rebuilding the derived answer index
 - runtime `.zim` fallback is enabled but the allowlisted `.zim` files are missing
 - StackFlow service is installed but the configured model package is missing
+- the Pi app container cannot reach `host.docker.internal:8000`
 - A legacy config still uses `llm.model_path` or `llm.max_words` instead of the current v1 contract
 
 ## Security/Privacy Constraints

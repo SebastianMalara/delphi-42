@@ -52,6 +52,9 @@ class DryRunRadio:
         self.inbox.clear()
         return messages
 
+    def queue_message(self, message: IncomingMessage) -> None:
+        self.inbox.append(message)
+
     def send_text(self, message: OutboundMessage) -> None:
         self.sent.append(message)
 

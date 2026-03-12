@@ -1,0 +1,50 @@
+services:
+  oracle-indexer:
+    build:
+      context: .
+    image: delphi42:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command:
+      - python
+      - -m
+      - ingest.build_index
+      - --input-dir
+      - /workspace/sample_data/plaintext
+      - --db
+      - /workspace/artifacts/dev/oracle.db
+    restart: "no"
+
+  oracle-app:
+    build:
+      context: .
+    image: delphi42:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    depends_on:
+      oracle-indexer:
+        condition: service_completed_successfully
+    environment:
+      DELPHI_LOG_LEVEL: INFO
+    command:
+      - python
+      - -m
+      - bot.oracle_bot
+
+  kiwix:
+    image: kiwix/kiwix-serve:latest
+    volumes:
+      - ./sample_data/zim:/data/zim:ro
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        if ls /data/zim/*.zim >/dev/null 2>&1; then
+          exec kiwix-serve --port=8080 /data/zim/*.zim;
+        fi
+        printf 'Mount one or more .zim files under /data/zim to enable Kiwix.\n'
+        exec tail -f /dev/null
+    ports:
+      - "8080:8080"

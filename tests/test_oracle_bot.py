@@ -83,6 +83,38 @@ llm:
     assert isinstance(bot.radio, DryRunRadio)
 
 
+def test_build_oracle_bot_uses_simulated_transport_from_config(tmp_path: Path) -> None:
+    documents = [
+        ExtractedDocument(
+            title="Water Purification",
+            source_id="water.txt",
+            text="Boil water for one minute before drinking.",
+        )
+    ]
+    index_path = tmp_path / "data/index/oracle.db"
+    SQLiteIndexBuilder(index_path).build(build_chunks(documents))
+
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        f"""
+node_name: test-node
+radio:
+  transport: simulated
+  device: ""
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+llm:
+  backend: deterministic
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bot = build_oracle_bot(config_path, logger=logging.getLogger("test.simulated"))
+
+    assert isinstance(bot.radio, DryRunRadio)
+
+
 def test_build_oracle_bot_wires_runtime_zim_fallback_when_enabled(
     tmp_path: Path,
     monkeypatch,
