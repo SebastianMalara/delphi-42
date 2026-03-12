@@ -23,6 +23,7 @@
 | R-009 | Third-party StackFlow apt repo or model packaging changes break reproducibility | Medium | Medium | Ops Lead | record apt source, installed package manifest, and known-good image; bench upgrades before field rollout | package install fails or model IDs drift unexpectedly | Open |
 | R-010 | Containerized Pi app cannot reach the host-local model API reliably | Medium | Medium | Ops Lead | standardize on `host.docker.internal:host-gateway`, test preflight from the container, and keep deterministic fallback active | `oracle-app` logs model API connection failures on Pi | Open |
 | R-011 | Containerized radio path behaves differently from native Meshtastic on reconnect or permission changes | High | Medium | Software Lead | add Pi Compose drills for `/dev/ttyUSB0`, test reconnect behavior, and keep simulated radio confined to development only | container loses access to the serial device or stops receiving after reconnect | Open |
+| R-012 | LM Studio model id or local server settings drift from the Mac config profiles | Medium | Medium | Software Lead | add Mac preflight, require `/v1/models` check before runtime, and document model-id replacement explicitly in the quickstart | Mac preflight fails or the bot degrades to deterministic unexpectedly | Open |
 
 ## Milestone Review Note
 

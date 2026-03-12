@@ -32,6 +32,8 @@ The dev profile uses:
 - mock OpenAI-compatible service on `mock-openai:8000`
 - optional `ollama` profile for manual model demos
 
+If you want to validate LM Studio, real `.zim` archives, or a live T114 on an Apple Silicon Mac, use the host-native path in [`mac_m1_pro_quickstart.md`](mac_m1_pro_quickstart.md) instead of this containerized dev profile.
+
 ## Pi Hybrid Workflow
 
 On Raspberry Pi 5, use the same Delphi app image and Compose packaging for the portable runtime, but keep the M5 model service on the host.

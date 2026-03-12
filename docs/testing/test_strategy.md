@@ -29,6 +29,7 @@ The strategy covers:
 ## Environments
 
 - developer laptop with Docker/OrbStack for unit and fast integration tests
+- Apple Silicon Mac host-native lane for LM Studio, `.zim`, and live T114 validation
 - Raspberry Pi bench node for system validation
 - field deployment environment for radio, power, and hotspot behavior
 
@@ -37,6 +38,7 @@ The strategy covers:
 - representative direct-message commands
 - curated plaintext corpus for deterministic retrieval tests
 - repo-tracked sample corpus for Compose workflows
+- one allowlisted real `.zim` archive for Mac-native validation
 - example runtime config
 - prototype hardware kit with radio, SSD, battery, and hotspot stack
 

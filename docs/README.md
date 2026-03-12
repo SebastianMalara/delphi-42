@@ -17,10 +17,11 @@ Read the docs in this order if you are new to the project:
 3. [`architecture/system_context.md`](architecture/system_context.md)
 4. [`hardware/node_topology.md`](hardware/node_topology.md)
 5. [`ai/retrieval_and_response_policy.md`](ai/retrieval_and_response_policy.md)
-6. [`operations/container_workflows.md`](operations/container_workflows.md)
-7. [`operations/deployment_runbook.md`](operations/deployment_runbook.md)
-8. [`testing/test_strategy.md`](testing/test_strategy.md)
-9. [`project/execution_plan.md`](project/execution_plan.md)
+6. [`operations/mac_m1_pro_quickstart.md`](operations/mac_m1_pro_quickstart.md)
+7. [`operations/container_workflows.md`](operations/container_workflows.md)
+8. [`operations/deployment_runbook.md`](operations/deployment_runbook.md)
+9. [`testing/test_strategy.md`](testing/test_strategy.md)
+10. [`project/execution_plan.md`](project/execution_plan.md)
 
 ## Documentation Taxonomy
 
@@ -55,6 +56,7 @@ Read the docs in this order if you are new to the project:
 
 ### Operations
 
+- [`operations/mac_m1_pro_quickstart.md`](operations/mac_m1_pro_quickstart.md): host-native Mac validation lane using LM Studio, optional Kiwix, and an optional live T114.
 - [`operations/raspberry_pi_provisioning.md`](operations/raspberry_pi_provisioning.md): base Pi setup.
 - [`operations/container_workflows.md`](operations/container_workflows.md): Mac/OrbStack development and Pi Compose workflows.
 - [`operations/deployment_runbook.md`](operations/deployment_runbook.md): deploy the full node.

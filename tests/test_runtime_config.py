@@ -111,6 +111,24 @@ radio:
     assert config.radio.device == ""
 
 
+def test_repo_mac_config_profiles_load() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    sim_config = load_runtime_config(
+        repo_root / "config/oracle.mac.sim.yaml",
+        root_dir=repo_root,
+    )
+    live_config = load_runtime_config(
+        repo_root / "config/oracle.mac.live.yaml",
+        root_dir=repo_root,
+    )
+
+    assert sim_config.radio.transport == "simulated"
+    assert sim_config.llm.base_url == "http://127.0.0.1:1234/v1"
+    assert live_config.radio.transport == "meshtastic"
+    assert live_config.radio.device.startswith("/dev/cu.usbmodem")
+
+
 def test_load_runtime_config_rejects_invalid_reply_limits(tmp_path: Path) -> None:
     config_path = tmp_path / "oracle.yaml"
     config_path.write_text(

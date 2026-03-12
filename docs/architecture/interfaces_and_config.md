@@ -36,6 +36,7 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 | --- | --- |
 | `python -m bot.oracle_bot` | Start the bot loop |
 | `python -m bot.dev_console` | Start the simulated-radio development console |
+| `python -m scripts.mac_preflight --config ...` | Validate the Mac-native LM Studio plus `.zim` plus Meshtastic environment |
 | `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...` | Export curated `.zim` content into staged plaintext |
 | `python -m ingest.build_index --input-dir ... --db ...` | Build or rebuild the SQLite FTS index |
 
@@ -61,6 +62,8 @@ Current implementation note:
 - The configured API key is a local placeholder contract for the OpenAI client and may remain `sk-` unless the local service is hardened differently.
 - `config/oracle.dev.yaml` is the default simulated-radio dev profile.
 - `config/oracle.pi.yaml` is the default Pi Compose profile.
+- `config/oracle.mac.sim.yaml` is the host-native Apple Silicon simulated-radio profile for LM Studio.
+- `config/oracle.mac.live.yaml` is the host-native Apple Silicon live-Meshtastic profile for a USB-attached T114.
 
 ### Service Interfaces
 
@@ -80,6 +83,8 @@ Current implementation note:
 | `config/oracle.example.yaml` | generic reference configuration |
 | `config/oracle.dev.yaml` | simulated-radio development config |
 | `config/oracle.pi.yaml` | Pi Compose runtime config |
+| `config/oracle.mac.sim.yaml` | host-native Mac simulated-radio config |
+| `config/oracle.mac.live.yaml` | host-native Mac live-radio config |
 | `compose.yaml`, `compose.dev.yaml`, `compose.pi.yaml` | portable runtime packaging and environment overlays |
 | `sample_data/plaintext` | repo-tracked sample corpus for local development |
 | `data/library/plaintext` | staged plaintext corpus |

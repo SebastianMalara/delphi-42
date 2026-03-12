@@ -66,3 +66,7 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-019 | `compose.dev` starts `oracle-app`, `oracle-indexer`, and `mock-openai` with a working sample corpus | Integration | local dev | Software Lead | compose smoke log |
 | TM-020 | `oracle-app` in Pi Compose can reach host `llm-openai-api` through the configured host alias | System | Pi bench | Ops Lead | container networking note |
 | TM-021 | simulated radio console can exercise `help`, `where`, and `ask` without hardware | Integration | local dev | Software Lead | console smoke note |
+| TM-022 | Mac preflight succeeds against LM Studio and the configured model id | Integration | local dev | Software Lead | preflight output |
+| TM-023 | Mac-native simulated lane answers with LM Studio over the OpenAI-compatible API | Integration | local dev | AI Lead | M1 quickstart smoke note |
+| TM-024 | Mac-native runtime `.zim` fallback works on a real allowlisted archive after a forced SQLite miss | System | local dev | AI Lead | M1 `.zim` validation note |
+| TM-025 | Mac-native live T114 lane exchanges DMs over USB serial and ignores public traffic | System | local dev | Software Lead | M1 live-mesh note |

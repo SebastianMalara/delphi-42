@@ -27,6 +27,7 @@ zim = [
 [project.scripts]
 delphi-bot = "bot.oracle_bot:main"
 delphi-dev-console = "bot.dev_console:main"
+delphi-mac-preflight = "scripts.mac_preflight:main"
 delphi-build-index = "ingest.build_index:main"
 delphi-extract-zim = "ingest.extract_zim:main"
 

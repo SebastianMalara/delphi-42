@@ -36,7 +36,7 @@ services:
   kiwix:
     image: kiwix/kiwix-serve:latest
     volumes:
-      - ./sample_data/zim:/data/zim:ro
+      - ./data/library/zim:/data/zim:ro
     command:
       - /bin/sh
       - -lc
