@@ -4,7 +4,7 @@
 - Audience: Operators and on-call maintainers.
 - Owner: Ops Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: deployment_runbook.md, backup_recovery_and_upgrade.md, ../../systemd/oracle-bot.service
 - Exit Criteria: Routine service starts, stops, validation, and health checks are documented.
 
@@ -13,6 +13,7 @@
 - `oracle-bot.service`: long-running question-answer service
 - `oracle-core.service`: oneshot or scheduled index rebuild
 - hotspot and archive services managed by the host
+- optional Pi-side UPS monitoring and shutdown service when that hardware is fitted
 
 ## Daily Operator Tasks
 
@@ -21,6 +22,7 @@
 - check index age and corpus freshness
 - check available disk space
 - review privacy-safe logs for errors
+- if the Pi-side UPS is enabled, review low-power events and recent shutdown records
 
 ## Standard Commands
 
@@ -39,3 +41,4 @@ journalctl -u oracle-bot -n 100
 - index file exists and matches configured location
 - hotspot archive responds locally
 - restart behavior is clean after service or host reboot
+- if a Pi-side UPS is present, battery state and low-power events are visible to the operator

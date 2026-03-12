@@ -4,7 +4,7 @@
 - Audience: QA, engineering, and project leads.
 - Owner: QA Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: test_strategy.md, requirements_traceability.md, ../project/execution_plan.md
 - Exit Criteria: Each critical capability is mapped to a planned test level, environment, and evidence artifact.
 
@@ -57,3 +57,4 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-010 | node survives field power cycle | Field | controlled field site | Hardware Lead | field acceptance note |
 | TM-011 | privacy-safe logging behavior | System | Pi bench | Ops Lead | log review |
 | TM-012 | end-to-end ask flow over mesh | Field | controlled field site | QA Lead | field acceptance transcript |
+| TM-013 | low-power event triggers graceful shutdown or reduced-service mode | System | Pi bench | Ops Lead | power management test note |

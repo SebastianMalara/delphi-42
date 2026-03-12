@@ -1,0 +1,33 @@
+from pathlib import Path
+
+import pytest
+
+from core.retriever import SQLiteRetriever
+from ingest.build_index import SQLiteIndexBuilder, build_chunks
+from ingest.zim_extract import ExtractedDocument
+
+
+def test_sqlite_retriever_reads_generated_index(tmp_path: Path) -> None:
+    documents = [
+        ExtractedDocument(
+            title="Water Purification",
+            source_id="water.txt",
+            text="Boil water for one minute before drinking.\n\nStore clean water safely.",
+        )
+    ]
+    chunks = build_chunks(documents)
+    db_path = tmp_path / "oracle.db"
+    SQLiteIndexBuilder(db_path).build(chunks)
+
+    results = SQLiteRetriever(db_path).search("how do i purify water")
+
+    assert len(results) == 1
+    assert results[0].title == "Water Purification"
+    assert results[0].source == "water.txt"
+    assert "Boil water" in results[0].snippet
+    assert results[0].matched_terms >= 1
+
+
+def test_sqlite_retriever_requires_existing_index(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        SQLiteRetriever(tmp_path / "missing.db")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from .chunker import TextChunk, chunk_text
@@ -16,18 +18,31 @@ class SQLiteIndexBuilder:
 
     def build(self, chunks: list[TextChunk]) -> int:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as connection:
+        temp_db = self._temp_db_path()
+        with sqlite3.connect(temp_db) as connection:
             connection.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5("
-                "source_id, ordinal UNINDEXED, text)"
+                "title, source_id UNINDEXED, ordinal UNINDEXED, text)"
             )
-            connection.execute("DELETE FROM chunks")
             connection.executemany(
-                "INSERT INTO chunks(source_id, ordinal, text) VALUES (?, ?, ?)",
-                [(chunk.source_id, chunk.ordinal, chunk.text) for chunk in chunks],
+                "INSERT INTO chunks(title, source_id, ordinal, text) VALUES (?, ?, ?, ?)",
+                [
+                    (chunk.title, chunk.source_id, chunk.ordinal, chunk.text)
+                    for chunk in chunks
+                ],
             )
             connection.commit()
+        os.replace(temp_db, self.db_path)
         return len(chunks)
+
+    def _temp_db_path(self) -> Path:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"{self.db_path.stem}.",
+            suffix=self.db_path.suffix or ".db",
+            dir=self.db_path.parent,
+            delete=False,
+        ) as handle:
+            return Path(handle.name)
 
 
 def load_plaintext_documents(input_dir: Path) -> list[ExtractedDocument]:
@@ -46,7 +61,9 @@ def load_plaintext_documents(input_dir: Path) -> list[ExtractedDocument]:
 def build_chunks(documents: list[ExtractedDocument]) -> list[TextChunk]:
     chunks: list[TextChunk] = []
     for document in documents:
-        chunks.extend(chunk_text(document.source_id, document.text))
+        chunks.extend(
+            chunk_text(document.source_id, document.text, title=document.title)
+        )
     return chunks
 
 

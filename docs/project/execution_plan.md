@@ -4,7 +4,7 @@
 - Audience: Project leads, engineering, and operations.
 - Owner: Project Lead
 - Status: Active
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: risk_register.md, ../testing/test_matrix.md, ../overview/scope_and_non_goals.md
 - Exit Criteria: The project can be managed directly from this plan without requiring an external tracker for milestone status.
 
@@ -21,9 +21,10 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Documentation | Publish repo-native documentation suite | Project Lead | Done | 2026-03-11 | none | docs taxonomy, README front door, and governance docs merged | `docs/README.md` |
 | Documentation | Publish tracked execution plan and risk register | Project Lead | Done | 2026-03-11 | none | tracked project docs merged | `docs/project/execution_plan.md`, `docs/project/risk_register.md` |
-| Hardware | Freeze prototype hardware BOM | Hardware Lead | Done | 2026-03-11 | ADR-0005 | BOM approved and procurement-ready | `docs/hardware/bill_of_materials.md`, `docs/project/reviews/hardware_bom_signoff.md` |
+| Hardware | Freeze prototype hardware BOM | Hardware Lead | In Progress | 2026-03-14 | ADR-0005 | Bench package approved and revised 12V-primary-plus-UPS field power package re-reviewed | revised BOM draft committed; field power re-review pending |
 | Hardware | Assemble bench prototype node | Hardware Lead | Not Started | 2026-03-27 | hardware BOM | powered bench node with Pi, radio, SSD, and enclosure draft | assembly checklist |
 | Platform | Provision Raspberry Pi base image and storage layout | Ops Lead | Not Started | 2026-03-27 | bench prototype | Pi boots with stable mounts and base packages | provisioning log |
+| Platform | Implement low-power shutdown and reduced-service policy | Ops Lead | Not Started | 2026-04-03 | provisioned Pi, Pi-side UPS candidate | Pi reacts predictably to low-input and low-battery events with either graceful shutdown or reduced-service mode | power management test note |
 | Radio | Replace dry-run transport with real Meshtastic integration | Software Lead | Not Started | 2026-04-03 | ADR-0002, provisioned Pi | bot communicates with live radio over supported device path | integration test note |
 | Core | Implement persistent SQLite-backed retriever | AI Lead | Not Started | 2026-04-03 | staged corpus, platform provisioned | runtime retrieval uses generated index | retrieval test evidence |
 | AI | Wire local `llama.cpp` runtime with fallback path | AI Lead | Not Started | 2026-04-10 | ADR-0001, provisioned Pi | configured model backend returns bounded answers | model smoke test |

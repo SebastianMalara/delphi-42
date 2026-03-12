@@ -5,12 +5,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class TextChunk:
+    title: str
     source_id: str
     ordinal: int
     text: str
 
 
-def chunk_text(source_id: str, text: str, max_chars: int = 420) -> list[TextChunk]:
+def chunk_text(
+    source_id: str,
+    text: str,
+    max_chars: int = 420,
+    *,
+    title: str | None = None,
+) -> list[TextChunk]:
     """Split extracted text into compact chunks suitable for local indexing."""
     normalized_paragraphs = [
         " ".join(paragraph.split())
@@ -31,6 +38,7 @@ def chunk_text(source_id: str, text: str, max_chars: int = 420) -> list[TextChun
             return
         chunks.append(
             TextChunk(
+                title=title or source_id,
                 source_id=source_id,
                 ordinal=len(chunks),
                 text=" ".join(current_parts),
@@ -45,6 +53,7 @@ def chunk_text(source_id: str, text: str, max_chars: int = 420) -> list[TextChun
             for split_paragraph in _split_long_paragraph(paragraph, max_chars):
                 chunks.append(
                     TextChunk(
+                        title=title or source_id,
                         source_id=source_id,
                         ordinal=len(chunks),
                         text=split_paragraph,

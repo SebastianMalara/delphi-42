@@ -16,6 +16,9 @@ dependencies = [
 bot = [
   "meshtastic",
 ]
+llm = [
+  "llama-cpp-python",
+]
 
 [project.scripts]
 delphi-bot = "bot.oracle_bot:main"

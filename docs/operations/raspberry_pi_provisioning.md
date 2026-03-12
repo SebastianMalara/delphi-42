@@ -4,7 +4,7 @@
 - Audience: Operators and builders.
 - Owner: Ops Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-12
 - Dependencies: deployment_runbook.md, ../../config/oracle.example.yaml, ../../systemd/
 - Exit Criteria: An operator can provision a clean Raspberry Pi host ready for Delphi-42 deployment.
 
@@ -14,6 +14,7 @@
 - Python 3.9 or newer
 - working USB support for radio and SSD
 - persistent mount point for corpus, model, and index data
+- I2C enabled if a Pi-side UPS such as PiSugar 3 Plus is installed
 
 ## Provisioning Steps
 
@@ -25,12 +26,14 @@
 6. Copy repo contents or deploy a packaged checkout.
 7. Create and activate a virtual environment.
 8. Install the project in editable or packaged mode.
+9. If a Pi-side UPS is fitted, enable I2C and install its monitoring software before field validation.
 
 ## Required Local Services
 
 - `hostapd` and `dnsmasq` or equivalent for hotspot mode
 - Kiwix or equivalent archive server
 - `systemd` for service supervision
+- Pi-side UPS monitoring service if field shutdown automation is enabled
 
 ## Provisioning Validation
 
@@ -38,3 +41,4 @@
 - radio is visible at the expected device path
 - SSD mount is persistent after reboot
 - Python environment can run `pytest` and local entry points
+- if a Pi-side UPS is installed, its telemetry interface is visible and reports battery state
