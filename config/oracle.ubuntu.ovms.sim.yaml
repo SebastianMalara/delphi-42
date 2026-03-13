@@ -1,4 +1,4 @@
-node_name: delphi-42-dev
+node_name: delphi-42-ubuntu-ovms
 
 radio:
   transport: simulated
@@ -17,19 +17,21 @@ broadcasts:
     - SEEK WISDOM IN PRIVATE.
 
 knowledge:
-  plaintext_dir: sample_data/plaintext
-  index_path: artifacts/dev/oracle.db
-  kiwix_url: http://kiwix:8080
+  plaintext_dir: data/library/plaintext
+  index_path: data/index/oracle-ubuntu-ovms.db
+  kiwix_url: http://127.0.0.1:8080
   zim_dir: data/library/zim
   runtime_zim_fallback_enabled: false
-  runtime_zim_allowlist: []
+  runtime_zim_allowlist:
+    - wikipedia_en_medicine_maxi_2023-12.zim
   runtime_zim_search_limit: 3
 
 llm:
   backend: openai-compatible
-  provider: generic
-  base_url: http://mock-openai:8000/v1
-  model: qwen3-1.7B-Int8-ctx-axcl
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  # Replace this with the exact model id returned by GET /v3/models from OVMS.
+  model: replace-with-ovms-model-id
   api_key: sk-
   timeout_seconds: 45
 
@@ -39,4 +41,4 @@ reply:
   max_continuation_packets: 3
 
 wifi:
-  ssid: DELPHI-42-DEV
+  ssid: DELPHI-42-OVMS

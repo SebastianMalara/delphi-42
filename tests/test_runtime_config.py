@@ -27,6 +27,7 @@ knowledge:
     assert config.radio.device == "/dev/ttyUSB1"
     assert config.privacy.answer_public_messages is False
     assert config.llm.backend == "openai-compatible"
+    assert config.llm.provider == "generic"
     assert config.llm.base_url == "http://127.0.0.1:8000/v1"
     assert config.llm.model == "qwen3-1.7B-Int8-ctx-axcl"
     assert config.reply.short_max_chars == 120
@@ -65,6 +66,20 @@ llm:
         load_runtime_config(config_path, root_dir=tmp_path)
 
 
+def test_load_runtime_config_rejects_unsupported_provider(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+llm:
+  provider: mystery-box
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="Unsupported llm.provider"):
+        load_runtime_config(config_path, root_dir=tmp_path)
+
+
 def test_load_runtime_config_rejects_unsupported_radio_transport(tmp_path: Path) -> None:
     config_path = tmp_path / "oracle.yaml"
     config_path.write_text(
@@ -92,6 +107,24 @@ llm:
     config = load_runtime_config(config_path, root_dir=tmp_path)
 
     assert config.llm.backend == "openai-compatible"
+
+
+def test_load_runtime_config_accepts_provider_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+llm:
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: demo-model
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_runtime_config(config_path, root_dir=tmp_path)
+
+    assert config.llm.provider == "ovms"
+    assert config.llm.base_url == "http://127.0.0.1:8000/v3"
 
 
 def test_load_runtime_config_allows_simulated_transport_without_device(tmp_path: Path) -> None:
@@ -124,9 +157,29 @@ def test_repo_mac_config_profiles_load() -> None:
     )
 
     assert sim_config.radio.transport == "simulated"
+    assert sim_config.llm.provider == "lm-studio"
     assert sim_config.llm.base_url == "http://127.0.0.1:1234/v1"
     assert live_config.radio.transport == "meshtastic"
     assert live_config.radio.device.startswith("/dev/cu.usbmodem")
+
+
+def test_repo_ubuntu_ovms_config_profiles_load() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    sim_config = load_runtime_config(
+        repo_root / "config/oracle.ubuntu.ovms.sim.yaml",
+        root_dir=repo_root,
+    )
+    live_config = load_runtime_config(
+        repo_root / "config/oracle.ubuntu.ovms.live.yaml",
+        root_dir=repo_root,
+    )
+
+    assert sim_config.radio.transport == "simulated"
+    assert sim_config.llm.provider == "ovms"
+    assert sim_config.llm.base_url == "http://127.0.0.1:8000/v3"
+    assert live_config.radio.transport == "meshtastic"
+    assert live_config.radio.device.startswith("/dev/ttyACM")
 
 
 def test_load_runtime_config_rejects_invalid_reply_limits(tmp_path: Path) -> None:

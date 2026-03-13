@@ -30,6 +30,7 @@ knowledge:
 
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   # Replace this with the exact model id returned by GET /v1/models from LM Studio.
   model: replace-with-lmstudio-model-id

@@ -4,7 +4,7 @@
 - Audience: AI, software, QA, and operations.
 - Owner: AI Lead
 - Status: Draft v1
-- Last Updated: 2026-03-12
+- Last Updated: 2026-03-13
 - Dependencies: ingestion_and_indexing.md, ../../core/prompt_builder.py, ../../core/oracle_service.py, ../operations/agentic_oracle_sop.md
 - Exit Criteria: Engineers can implement answer behavior and QA can verify it against explicit rules.
 
@@ -53,6 +53,7 @@
 - local model runtime: `StackFlow` OpenAI-compatible API served from the M5 AX8850 kit
 - default model: `qwen3-1.7B-Int8-ctx-axcl`
 - supported runtime backends: `openai-compatible` and `deterministic`
+- supported OpenAI-compatible providers: `generic`, `stackflow`, `lm-studio`, and `ovms`
 - legacy compatibility alias: `axcl-openai` normalizes to `openai-compatible`
 - top-k context: 3 passages unless testing requires adjustment
 - default public broadcast interval: 90 minutes

@@ -15,6 +15,16 @@ DEFAULT_BROADCAST_MESSAGES = (
 OPENAI_COMPATIBLE_BACKEND = "openai-compatible"
 LEGACY_OPENAI_BACKEND = "axcl-openai"
 SUPPORTED_LLM_BACKENDS = {OPENAI_COMPATIBLE_BACKEND, LEGACY_OPENAI_BACKEND, "deterministic"}
+GENERIC_OPENAI_PROVIDER = "generic"
+STACKFLOW_PROVIDER = "stackflow"
+LM_STUDIO_PROVIDER = "lm-studio"
+OVMS_PROVIDER = "ovms"
+SUPPORTED_LLM_PROVIDERS = {
+    GENERIC_OPENAI_PROVIDER,
+    STACKFLOW_PROVIDER,
+    LM_STUDIO_PROVIDER,
+    OVMS_PROVIDER,
+}
 SUPPORTED_RADIO_TRANSPORTS = {"meshtastic", "simulated"}
 
 
@@ -55,6 +65,7 @@ class KnowledgeConfig:
 @dataclass(frozen=True)
 class LLMConfig:
     backend: str = OPENAI_COMPATIBLE_BACKEND
+    provider: str = GENERIC_OPENAI_PROVIDER
     base_url: str = "http://127.0.0.1:8000/v1"
     model: str = "qwen3-1.7B-Int8-ctx-axcl"
     api_key: str = "sk-"
@@ -93,6 +104,7 @@ class OracleRuntimeConfig:
             f"channel={self.radio.channel} "
             f"index={self.knowledge.index_path} "
             f"llm_backend={self.llm.backend} "
+            f"llm_provider={self.llm.provider} "
             f"llm_model={self.llm.model} "
             f"zim_fallback={self.knowledge.runtime_zim_fallback_enabled} "
             f"reply_short_max={self.reply.short_max_chars}"
@@ -189,6 +201,9 @@ def load_runtime_config(
                     )
                 ).strip()
             ),
+            provider=str(
+                raw_data.get("llm", {}).get("provider", GENERIC_OPENAI_PROVIDER)
+            ).strip(),
             base_url=str(
                 raw_data.get("llm", {}).get("base_url", "http://127.0.0.1:8000/v1")
             ).strip(),
@@ -272,6 +287,11 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
         raise ConfigError(
             f"Unsupported llm.backend '{config.llm.backend}'. "
             f"Supported values: {sorted(SUPPORTED_LLM_BACKENDS)}"
+        )
+    if config.llm.provider not in SUPPORTED_LLM_PROVIDERS:
+        raise ConfigError(
+            f"Unsupported llm.provider '{config.llm.provider}'. "
+            f"Supported values: {sorted(SUPPORTED_LLM_PROVIDERS)}"
         )
     if config.llm.backend == OPENAI_COMPATIBLE_BACKEND:
         if not config.llm.base_url:

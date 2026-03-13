@@ -4,7 +4,7 @@
 - Audience: Engineering, QA, and operations.
 - Owner: QA Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-13
 - Dependencies: test_matrix.md, field_acceptance_protocol.md, requirements_traceability.md
 - Exit Criteria: The team can choose appropriate test levels, environments, and evidence for every planned subsystem change.
 
@@ -30,6 +30,7 @@ The strategy covers:
 
 - developer laptop with Docker/OrbStack for unit and fast integration tests
 - Apple Silicon Mac host-native lane for LM Studio, `.zim`, and live T114 validation
+- Ubuntu x86 host-native lane for OVMS, `.zim`, and live T114 validation
 - Raspberry Pi bench node for system validation
 - field deployment environment for radio, power, and hotspot behavior
 

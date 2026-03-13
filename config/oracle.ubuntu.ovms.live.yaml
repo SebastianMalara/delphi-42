@@ -1,8 +1,10 @@
-node_name: delphi-42
+node_name: delphi-42-ubuntu-ovms-live
 
 radio:
   transport: meshtastic
-  device: /dev/ttyUSB0
+  # Replace this with the actual Linux device path for the attached T114, for example:
+  # /dev/ttyACM0
+  device: /dev/ttyACMREPLACE_ME
   channel: 0
 
 privacy:
@@ -18,7 +20,7 @@ broadcasts:
 
 knowledge:
   plaintext_dir: data/library/plaintext
-  index_path: data/index/oracle.db
+  index_path: data/index/oracle-ubuntu-ovms.db
   kiwix_url: http://127.0.0.1:8080
   zim_dir: data/library/zim
   runtime_zim_fallback_enabled: false
@@ -27,12 +29,11 @@ knowledge:
   runtime_zim_search_limit: 3
 
 llm:
-  # OpenAI-compatible local inference boundary. On Pi this usually points to the host
-  # M5 StackFlow service; in development it can point to a mock or another compatible host.
   backend: openai-compatible
-  provider: stackflow
-  base_url: http://127.0.0.1:8000/v1
-  model: qwen3-1.7B-Int8-ctx-axcl
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  # Replace this with the exact model id returned by GET /v3/models from OVMS.
+  model: replace-with-ovms-model-id
   api_key: sk-
   timeout_seconds: 45
 
@@ -42,4 +43,4 @@ reply:
   max_continuation_packets: 3
 
 wifi:
-  ssid: DELPHI-42
+  ssid: DELPHI-42-OVMS

@@ -4,7 +4,7 @@
 - Audience: Engineering and advanced operators.
 - Owner: Software Lead
 - Status: Draft v1
-- Last Updated: 2026-03-12
+- Last Updated: 2026-03-13
 - Dependencies: ../../config/oracle.mac.sim.yaml, ../../config/oracle.mac.live.yaml, ../../scripts/mac_preflight.py, container_workflows.md
 - Exit Criteria: A new M1 Pro user can reach simulated validation, real `.zim` validation, and live T114 validation without relying on tribal knowledge.
 
@@ -56,6 +56,7 @@ curl http://127.0.0.1:1234/v1/models
 ```
 
 5. Edit both [`config/oracle.mac.sim.yaml`](../../config/oracle.mac.sim.yaml) and [`config/oracle.mac.live.yaml`](../../config/oracle.mac.live.yaml):
+   - keep `llm.provider: lm-studio`
    - replace `llm.model` with the exact model id returned by `/v1/models`
 
 ## Stage A: Simulated Radio + LM Studio + Sample Corpus
@@ -71,6 +72,8 @@ Run preflight:
 ```bash
 uv run python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
 ```
+
+The Mac wrapper delegates to the generic host preflight and keeps the provider-specific `/v1` expectation for LM Studio.
 
 Start the simulated console:
 

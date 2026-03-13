@@ -4,7 +4,7 @@
 - Audience: QA, engineering, and project leads.
 - Owner: QA Lead
 - Status: Draft v1
-- Last Updated: 2026-03-12
+- Last Updated: 2026-03-13
 - Dependencies: test_strategy.md, requirements_traceability.md, ../project/execution_plan.md
 - Exit Criteria: Each critical capability is mapped to a planned test level, environment, and evidence artifact.
 
@@ -70,3 +70,4 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-023 | Mac-native simulated lane answers with LM Studio over the OpenAI-compatible API | Integration | local dev | AI Lead | M1 quickstart smoke note |
 | TM-024 | Mac-native runtime `.zim` fallback works on a real allowlisted archive after a forced SQLite miss | System | local dev | AI Lead | M1 `.zim` validation note |
 | TM-025 | Mac-native supervised live T114 lane exchanges DMs over USB serial, ignores public traffic, and survives no-fix position requests | System | local dev | Software Lead | M1 live-mesh note |
+| TM-026 | Ubuntu OVMS host preflight succeeds with provider `ovms`, `/v3/models`, and a real completion probe | Integration | local dev | Software Lead | OVMS preflight output |

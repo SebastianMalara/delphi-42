@@ -65,6 +65,7 @@ knowledge:
   runtime_zim_fallback_enabled: false
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   model: lmstudio-qwen
   api_key: lm-studio
@@ -102,6 +103,7 @@ knowledge:
   runtime_zim_fallback_enabled: false
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   model: lmstudio-qwen
   api_key: lm-studio
@@ -145,6 +147,7 @@ knowledge:
     - wikipedia_en_medicine_maxi_2023-12.zim
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   model: lmstudio-qwen
   api_key: lm-studio
@@ -184,6 +187,7 @@ knowledge:
   runtime_zim_fallback_enabled: false
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   model: replace-with-lmstudio-model-id
   api_key: lm-studio
@@ -224,6 +228,7 @@ knowledge:
   runtime_zim_fallback_enabled: false
 llm:
   backend: openai-compatible
+  provider: lm-studio
   base_url: http://127.0.0.1:1234/v1
   model: lmstudio-qwen
   api_key: lm-studio
@@ -247,3 +252,115 @@ llm:
     completion_check = next(result for result in results if result.name == "llm-completion")
     assert completion_check.ok is False
     assert "chat completion failed" in completion_check.details
+
+
+def test_run_preflight_accepts_ovms_provider_with_v3_base_url(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.sim.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: simulated
+  device: ""
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    assert all(result.ok for result in results)
+
+
+def test_run_preflight_flags_provider_path_mismatch(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.sim.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: simulated
+  device: ""
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v1
+  model: ovms-qwen
+  api_key: sk-
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    provider_check = next(result for result in results if result.name == "llm-provider")
+    assert provider_check.ok is False
+    assert "expects llm.base_url ending with '/v3'" in provider_check.details
+
+
+def test_run_preflight_detects_linux_serial_devices(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.live.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: meshtastic
+  device: /dev/ttyACM0
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: ["/dev/ttyACM0"] if pattern == "/dev/ttyACM*" else [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    serial_check = next(result for result in results if result.name == "serial-devices")
+    assert serial_check.ok is True
+    assert "/dev/ttyACM0" in serial_check.details

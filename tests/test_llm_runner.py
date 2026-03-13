@@ -67,3 +67,19 @@ def test_axcl_openai_runner_rejects_empty_completion() -> None:
 
     with pytest.raises(ModelExecutionError, match="empty completion"):
         runner.generate("prompt")
+
+
+def test_openai_runner_accepts_ovms_style_v3_base_url() -> None:
+    runner = OpenAICompatibleRunner(
+        base_url="http://127.0.0.1:8000/v3",
+        model="demo-model",
+        client_factory=lambda **_: FakeClient(
+            model_ids=["demo-model"],
+            content="SHORT: Ready.\nLONG:\nReady through OVMS.",
+        ),
+    )
+
+    answer = runner.generate("prompt")
+
+    assert answer.short_answer == "Ready."
+    assert answer.extended_answer == "Ready through OVMS."
