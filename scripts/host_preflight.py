@@ -19,6 +19,7 @@ from core.runtime_config import ConfigError, OracleRuntimeConfig
 SERIAL_DEVICE_GLOBS = (
     "/dev/cu.usb*",
     "/dev/tty.usb*",
+    "/dev/serial/by-id/*",
     "/dev/ttyUSB*",
     "/dev/ttyACM*",
 )

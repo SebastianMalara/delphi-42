@@ -25,7 +25,7 @@ knowledge:
   zim_dir: data/library/zim
   runtime_zim_fallback_enabled: false
   runtime_zim_allowlist:
-    - wikipedia_en_medicine_maxi_2023-12.zim
+    - medicine.zim
   runtime_zim_search_limit: 3
 
 llm:

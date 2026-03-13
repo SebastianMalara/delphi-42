@@ -2,8 +2,10 @@ node_name: delphi-42-ubuntu-ovms-live
 
 radio:
   transport: meshtastic
-  # Replace this with the actual Linux device path for the attached T114, for example:
-  # /dev/ttyACM0
+  # Replace this with the actual Linux device path for the attached T114.
+  # Prefer the stable by-id path when available, for example:
+  # /dev/serial/by-id/usb-Heltec_HT-n5262_3403206A50AF5C33-if00
+  # Fall back to /dev/ttyACM0 or /dev/ttyUSB0 only if by-id is unavailable.
   device: /dev/ttyACMREPLACE_ME
   channel: 0
 
@@ -25,7 +27,7 @@ knowledge:
   zim_dir: data/library/zim
   runtime_zim_fallback_enabled: false
   runtime_zim_allowlist:
-    - wikipedia_en_medicine_maxi_2023-12.zim
+    - medicine.zim
   runtime_zim_search_limit: 3
 
 llm:

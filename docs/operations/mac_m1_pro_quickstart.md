@@ -96,10 +96,10 @@ Expected results:
 
 ## Stage B: Real `.zim` Validation
 
-Copy one real archive into the local ZIM directory:
+Copy one real archive into the local ZIM directory and stage it under the stable local alias:
 
 ```bash
-cp /path/to/wikipedia_en_medicine_maxi_2023-12.zim data/library/zim/
+cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
 Enable runtime fallback in [`config/oracle.mac.sim.yaml`](../../config/oracle.mac.sim.yaml):
@@ -121,7 +121,7 @@ Run the simulated console again and ask a question that is not answered by `samp
 Then validate the ingest path explicitly:
 
 ```bash
-uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist wikipedia_en_medicine_maxi_2023-12.zim
+uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist medicine.zim
 uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-mac-zim.db
 ```
 

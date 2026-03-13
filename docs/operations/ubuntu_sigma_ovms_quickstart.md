@@ -12,13 +12,47 @@
 
 This is the preferred x86 Ubuntu prototype lane for Delphi-42:
 
-- run Delphi-42 natively in a `uv`-managed Python environment
+- run Delphi-42 natively on the host
 - run OVMS on the host as the OpenAI-compatible model API
 - keep `llm.backend: openai-compatible` and `llm.provider: ovms`
 - use Kiwix in Docker only if you want archive browsing
 - start with simulated radio, then switch to a supervised live T114 over USB
 
-## Prerequisites
+## Preferred Bootstrap
+
+For this lane, the preferred path is now the one-line bootstrap script from the repo root:
+
+```bash
+./scripts/bootstrap_ubuntu_ovms.sh
+```
+
+It installs the Ubuntu host prerequisites, creates the gitignored runtime root under `artifacts/ubuntu-ovms/`, downloads the selected medicine archive into `artifacts/ubuntu-ovms/library/zim/releases/`, aliases it locally as `medicine.zim`, builds the runtime index, starts OVMS with `OpenVINO/Phi-3.5-mini-instruct-int4-ov`, detects the attached Heltec T114 by `/dev/serial/by-id/...`, generates local sim/live configs, and runs both preflight checks.
+
+Assumptions and caveats:
+
+- this bootstrap is aimed at the full Ubuntu + OVMS + live-T114 lane, not a simulated-only host
+- the T114 should already be attached before you run it
+- if the script has to add your user to `plugdev`, it will finish the host/sim setup, generate the live config, and skip live preflight for that run; log out and back in, then rerun the bootstrap or `artifacts/ubuntu-ovms/bin/preflight-live`
+- if you want a staged or simulated-only setup without the live radio attached yet, use the manual fallback flow below
+
+Useful overrides:
+
+```bash
+./scripts/bootstrap_ubuntu_ovms.sh --zim-profile maxi
+./scripts/bootstrap_ubuntu_ovms.sh --radio-device /dev/serial/by-id/usb-Heltec_...
+./scripts/bootstrap_ubuntu_ovms.sh --refresh-zim
+```
+
+The generated helper commands are:
+
+- `artifacts/ubuntu-ovms/bin/preflight-sim`
+- `artifacts/ubuntu-ovms/bin/preflight-live`
+- `artifacts/ubuntu-ovms/bin/run-sim`
+- `artifacts/ubuntu-ovms/bin/run-live`
+
+If you need to control each step manually instead of using the bootstrap, use the fallback flow below.
+
+## Manual Fallback Prerequisites
 
 1. Install Ubuntu 22.04 or another supported Ubuntu release for your OVMS setup.
 2. Install `libzim`, Python 3.9 or newer, and `uv`.
@@ -85,10 +119,10 @@ Expected results:
 
 ## Stage B: Real `.zim` Validation
 
-Copy one real archive into the local ZIM directory:
+Copy one real archive into the local ZIM directory and stage it under the stable local alias:
 
 ```bash
-cp /path/to/wikipedia_en_medicine_maxi_2023-12.zim data/library/zim/
+cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
 Enable runtime fallback in [`config/oracle.ubuntu.ovms.sim.yaml`](../../config/oracle.ubuntu.ovms.sim.yaml):
@@ -104,7 +138,7 @@ uv run python -m scripts.host_preflight --config config/oracle.ubuntu.ovms.sim.y
 Then validate the ingest path explicitly:
 
 ```bash
-uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist wikipedia_en_medicine_maxi_2023-12.zim
+uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist medicine.zim
 uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-ubuntu-ovms-zim.db
 ```
 
@@ -123,10 +157,10 @@ Expected results:
 uv run python -m scripts.host_preflight --config config/oracle.ubuntu.ovms.live.yaml
 ```
 
-The first live preflight run will usually fail until you replace the placeholder device path. Use the listed `/dev/ttyACM*` or `/dev/ttyUSB*` values to choose the correct device.
+The first live preflight run will usually fail until you replace the placeholder device path. Prefer the listed `/dev/serial/by-id/...` entry for the attached T114. Use `/dev/ttyACM*` or `/dev/ttyUSB*` only if a stable by-id path is unavailable.
 
 3. Edit [`config/oracle.ubuntu.ovms.live.yaml`](../../config/oracle.ubuntu.ovms.live.yaml):
-   - replace `radio.device` with the actual `/dev/ttyACM...` or `/dev/ttyUSB...` path
+   - replace `radio.device` with the actual `/dev/serial/by-id/...` path when available, or the correct `/dev/ttyACM...` or `/dev/ttyUSB...` fallback
    - if you already enabled `.zim` fallback in the simulated config, mirror that change here if you want the same retrieval behavior live
 
 4. Re-run preflight:

@@ -144,7 +144,7 @@ knowledge:
   zim_dir: {zim_dir}
   runtime_zim_fallback_enabled: true
   runtime_zim_allowlist:
-    - wikipedia_en_medicine_maxi_2023-12.zim
+    - medicine.zim
 llm:
   backend: openai-compatible
   provider: lm-studio
@@ -167,7 +167,7 @@ llm:
 
     zim_check = next(result for result in results if result.name == "zim-files")
     assert zim_check.ok is False
-    assert "wikipedia_en_medicine_maxi_2023-12.zim" in zim_check.details
+    assert "medicine.zim" in zim_check.details
 
 
 def test_run_preflight_flags_placeholder_values(tmp_path: Path) -> None:
@@ -364,3 +364,85 @@ llm:
     serial_check = next(result for result in results if result.name == "serial-devices")
     assert serial_check.ok is True
     assert "/dev/ttyACM0" in serial_check.details
+
+
+def test_run_preflight_detects_linux_by_id_serial_devices(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+    by_id_path = "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.live.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: meshtastic
+  device: {by_id_path}
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: [by_id_path] if pattern == "/dev/serial/by-id/*" else [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    serial_check = next(result for result in results if result.name == "serial-devices")
+    assert serial_check.ok is True
+    assert by_id_path in serial_check.details
+
+
+def test_run_preflight_lists_linux_by_id_devices_when_configured_device_is_missing(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+    configured_device = "/dev/ttyACM9"
+    by_id_path = "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.live.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: meshtastic
+  device: {configured_device}
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: [by_id_path] if pattern == "/dev/serial/by-id/*" else [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    serial_check = next(result for result in results if result.name == "serial-devices")
+    assert serial_check.ok is False
+    assert configured_device in serial_check.details
+    assert by_id_path in serial_check.details
