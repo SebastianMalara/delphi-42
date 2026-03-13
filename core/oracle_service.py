@@ -15,9 +15,16 @@ from .llm_runner import (
     ModelUnavailableError,
     RuleBasedRunner,
 )
-from .prompt_builder import build_prompt
-from .reply_formatter import format_answer_packets
-from .retriever import NullRetriever, RetrievalChunk, Retriever
+from .prompt_builder import build_long_answer_prompt, build_prompt
+from .reply_formatter import derive_short_answer, format_answer_packets
+from .retriever import (
+    NullRetriever,
+    RetrievalChunk,
+    Retriever,
+    grounded_retrieval_chunks,
+    minimum_grounding_threshold,
+    normalized_query_terms,
+)
 from .runtime_config import ReplyConfig
 
 
@@ -25,6 +32,7 @@ class ReplyMode(str, Enum):
     HELP = "help"
     POSITION = "position"
     MODEL = "model"
+    MODEL_LONG_FALLBACK = "model_long_fallback"
     DETERMINISTIC_FALLBACK = "deterministic_fallback"
     NO_GROUNDED_ANSWER = "no_grounded_answer"
     ARCHIVE_UNAVAILABLE = "archive_unavailable"
@@ -36,6 +44,10 @@ class OracleReply:
     share_position: bool = False
     mode: ReplyMode = ReplyMode.HELP
     retrieval_hits: int = 0
+    retrieval_source: str = "none"
+    retrieval_sources: tuple[str, ...] = ()
+    retrieval_titles: tuple[str, ...] = ()
+    retrieval_scores: tuple[int, ...] = ()
 
     @property
     def text(self) -> str:
@@ -83,20 +95,36 @@ class OracleService:
         )
 
     def _handle_ask(self, question: str) -> OracleReply:
-        context = self.retriever.search(question, limit=self.retrieval_limit)
-        if not self._has_grounding(context) and self.fallback_retriever is not None:
-            fallback_context = self.fallback_retriever.search(
-                question, limit=self.retrieval_limit
+        query_terms = normalized_query_terms(question)
+        threshold = minimum_grounding_threshold(query_terms)
+
+        primary_context = grounded_retrieval_chunks(
+            question,
+            self.retriever.search(question, limit=self.retrieval_limit),
+        )
+        context = primary_context
+        retrieval_source = "sqlite" if primary_context else "none"
+
+        primary_best = self._best_score(primary_context)
+        if self.fallback_retriever is not None and (
+            not primary_context or primary_best <= threshold
+        ):
+            fallback_context = grounded_retrieval_chunks(
+                question,
+                self.fallback_retriever.search(question, limit=self.retrieval_limit),
             )
-            if self._has_grounding(fallback_context):
+            fallback_best = self._best_score(fallback_context)
+            if fallback_context and (not primary_context or fallback_best > primary_best):
                 context = fallback_context
+                retrieval_source = "zim" if not primary_context else "sqlite+zim"
 
         retrieval_hits = len(context)
-        if not self._has_grounding(context):
+        if not context:
             return OracleReply(
                 packets=(NO_GROUNDED_ANSWER,),
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
                 retrieval_hits=retrieval_hits,
+                retrieval_source="none",
             )
 
         prompt = build_prompt(
@@ -113,8 +141,24 @@ class OracleService:
                     packets=self._format_packets(draft),
                     mode=ReplyMode.MODEL,
                     retrieval_hits=retrieval_hits,
+                    retrieval_source=retrieval_source,
+                    retrieval_sources=self._retrieval_sources(context),
+                    retrieval_titles=self._retrieval_titles(context),
+                    retrieval_scores=self._retrieval_scores(context),
                 )
-            except (ModelUnavailableError, ModelExecutionError):
+            except ModelExecutionError:
+                fallback_draft = self._long_answer_model_fallback(question, context)
+                if fallback_draft is not None:
+                    return OracleReply(
+                        packets=self._format_packets(fallback_draft),
+                        mode=ReplyMode.MODEL_LONG_FALLBACK,
+                        retrieval_hits=retrieval_hits,
+                        retrieval_source=retrieval_source,
+                        retrieval_sources=self._retrieval_sources(context),
+                        retrieval_titles=self._retrieval_titles(context),
+                        retrieval_scores=self._retrieval_scores(context),
+                    )
+            except ModelUnavailableError:
                 pass
 
         try:
@@ -124,6 +168,8 @@ class OracleService:
                 ARCHIVE_UNAVAILABLE,
                 mode=ReplyMode.ARCHIVE_UNAVAILABLE,
                 retrieval_hits=retrieval_hits,
+                retrieval_source=retrieval_source,
+                context=context,
             )
 
         if fallback_draft.short_answer == NO_GROUNDED_ANSWER:
@@ -131,16 +177,21 @@ class OracleService:
                 NO_GROUNDED_ANSWER,
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
                 retrieval_hits=retrieval_hits,
+                retrieval_source="none",
             )
 
         return OracleReply(
             packets=self._format_packets(fallback_draft),
             mode=ReplyMode.DETERMINISTIC_FALLBACK,
             retrieval_hits=retrieval_hits,
+            retrieval_source=retrieval_source,
+            retrieval_sources=self._retrieval_sources(context),
+            retrieval_titles=self._retrieval_titles(context),
+            retrieval_scores=self._retrieval_scores(context),
         )
 
-    def _has_grounding(self, context: list[RetrievalChunk]) -> bool:
-        return any(chunk.snippet.strip() and chunk.matched_terms >= 1 for chunk in context)
+    def _best_score(self, context: list[RetrievalChunk]) -> int:
+        return max((chunk.matched_terms for chunk in context), default=0)
 
     def _format_packets(self, draft: AnswerDraft) -> tuple[str, ...]:
         return format_answer_packets(
@@ -150,15 +201,63 @@ class OracleService:
             max_continuation_packets=self.reply_config.max_continuation_packets,
         )
 
+    def _long_answer_model_fallback(
+        self,
+        question: str,
+        context: list[RetrievalChunk],
+    ) -> AnswerDraft | None:
+        long_answer_generator = getattr(self.llm, "generate_long_answer", None)
+        if not callable(long_answer_generator):
+            return None
+
+        long_prompt = build_long_answer_prompt(
+            question=question,
+            context_chunks=context,
+            continuation_max_chars=self.reply_config.continuation_max_chars,
+            max_continuation_packets=self.reply_config.max_continuation_packets,
+        )
+        try:
+            long_answer = str(long_answer_generator(long_prompt)).strip()
+        except Exception:
+            return None
+
+        if not long_answer or long_answer == NO_GROUNDED_ANSWER:
+            return None
+
+        short_answer = derive_short_answer(
+            long_answer,
+            max_chars=self.reply_config.short_max_chars,
+        )
+        if not short_answer:
+            return None
+
+        return AnswerDraft(short_answer=short_answer, extended_answer=long_answer)
+
+    def _retrieval_sources(self, context: list[RetrievalChunk]) -> tuple[str, ...]:
+        return tuple(chunk.source for chunk in context[: self.retrieval_limit])
+
+    def _retrieval_titles(self, context: list[RetrievalChunk]) -> tuple[str, ...]:
+        return tuple(chunk.title for chunk in context[: self.retrieval_limit])
+
+    def _retrieval_scores(self, context: list[RetrievalChunk]) -> tuple[int, ...]:
+        return tuple(chunk.matched_terms for chunk in context[: self.retrieval_limit])
+
     def _single_packet(
         self,
         text: str,
         *,
         mode: ReplyMode,
         retrieval_hits: int = 0,
+        retrieval_source: str = "none",
+        context: list[RetrievalChunk] | None = None,
     ) -> OracleReply:
+        context = context or []
         return OracleReply(
             packets=(text,),
             mode=mode,
             retrieval_hits=retrieval_hits,
+            retrieval_source=retrieval_source,
+            retrieval_sources=self._retrieval_sources(context),
+            retrieval_titles=self._retrieval_titles(context),
+            retrieval_scores=self._retrieval_scores(context),
         )

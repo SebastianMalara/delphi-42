@@ -77,6 +77,13 @@ class OpenAICompatibleRunner:
         self._preflight_model()
 
     def generate(self, prompt: str) -> AnswerDraft:
+        text = self._create_completion(prompt)
+        return parse_answer_draft(text)
+
+    def generate_long_answer(self, prompt: str) -> str:
+        return self._create_completion(prompt)
+
+    def _create_completion(self, prompt: str) -> str:
         try:
             output = self._client.chat.completions.create(
                 model=self.model,
@@ -94,8 +101,7 @@ class OpenAICompatibleRunner:
 
         if not text:
             raise ModelExecutionError("OpenAI-compatible API returned an empty completion")
-
-        return parse_answer_draft(text)
+        return text
 
     def _preflight_model(self) -> None:
         try:
@@ -122,15 +128,18 @@ def parse_answer_draft(text: str) -> AnswerDraft:
 
     short_marker = "SHORT:"
     long_marker = "LONG:"
-    if short_marker in text and long_marker in text:
-        short_part = text.split(short_marker, maxsplit=1)[1].split(long_marker, maxsplit=1)[0]
-        long_part = text.split(long_marker, maxsplit=1)[1]
-        short = " ".join(short_part.strip().split())
-        extended = " ".join(long_part.strip().split())
-        if short or extended:
-            return AnswerDraft(short_answer=short or extended, extended_answer=extended or short)
+    if short_marker not in text or long_marker not in text:
+        raise ModelExecutionError(
+            "OpenAI-compatible API did not return the required SHORT/LONG format"
+        )
 
-    return AnswerDraft(short_answer=raw, extended_answer=raw)
+    short_part = text.split(short_marker, maxsplit=1)[1].split(long_marker, maxsplit=1)[0]
+    long_part = text.split(long_marker, maxsplit=1)[1]
+    short = " ".join(short_part.strip().split())
+    extended = " ".join(long_part.strip().split())
+    if not short or not extended:
+        raise ModelExecutionError("OpenAI-compatible API returned an incomplete SHORT/LONG answer")
+    return AnswerDraft(short_answer=short, extended_answer=extended)
 
 
 def _coerce_content(content: Any) -> str:

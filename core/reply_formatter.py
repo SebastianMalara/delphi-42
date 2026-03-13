@@ -45,6 +45,16 @@ def format_answer_packets(
     return (first_packet, *numbered)
 
 
+def derive_short_answer(text: str, *, max_chars: int) -> str:
+    normalized = _normalize(text)
+    if not normalized:
+        return ""
+
+    sentences = [chunk for chunk in re.split(r"(?<=[.!?])\s+", normalized) if chunk]
+    first = sentences[0] if sentences else normalized
+    return trim_text(first, max_chars)
+
+
 def split_text(text: str, *, max_chars: int, max_parts: int) -> list[str]:
     if max_parts <= 0:
         return []

@@ -21,7 +21,7 @@ knowledge:
   index_path: data/index/oracle-ubuntu-ovms.db
   kiwix_url: http://127.0.0.1:8080
   zim_dir: data/library/zim
-  runtime_zim_fallback_enabled: false
+  runtime_zim_fallback_enabled: true
   runtime_zim_allowlist:
     - medicine.zim
   runtime_zim_search_limit: 3

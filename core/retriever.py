@@ -34,27 +34,32 @@ class KeywordRetriever:
         self.corpus = list(corpus)
 
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
-        tokens = _tokenize(question)
-        scored: list[tuple[int, RetrievalChunk]] = []
+        query_terms = normalized_query_terms(question)
+        threshold = minimum_grounding_threshold(query_terms)
+        if not query_terms:
+            return []
 
-        for chunk in self.corpus:
-            haystack = f"{chunk.title} {chunk.snippet}".lower()
-            score = sum(1 for token in tokens if token in haystack)
-            if score:
-                scored.append(
-                    (
-                        score,
-                        RetrievalChunk(
-                            title=chunk.title,
-                            snippet=chunk.snippet,
-                            source=chunk.source,
-                            matched_terms=score,
-                        ),
-                    )
+        scored: list[tuple[int, int, RetrievalChunk]] = []
+        for index, chunk in enumerate(self.corpus):
+            score = score_query_terms(query_terms, chunk.title, chunk.snippet)
+            if score < threshold:
+                continue
+            scored.append(
+                (
+                    score,
+                    index,
+                    RetrievalChunk(
+                        title=chunk.title,
+                        snippet=chunk.snippet,
+                        source=chunk.source,
+                        matched_terms=score,
+                    ),
                 )
+            )
 
-        scored.sort(key=lambda item: item[0], reverse=True)
-        return [chunk for _, chunk in scored[:limit]]
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        requested_limit = limit or 3
+        return [chunk for _, _, chunk in scored[:requested_limit]]
 
 
 class SQLiteRetriever:
@@ -66,37 +71,47 @@ class SQLiteRetriever:
         self._validate_index()
 
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
+        query_terms = normalized_query_terms(question)
         query = _question_to_fts_query(question)
         if not query:
             return []
 
-        normalized_tokens = _tokenize(question)
+        requested_limit = limit or self.default_limit
+        candidate_limit = max(requested_limit * 8, 12)
+        threshold = minimum_grounding_threshold(query_terms)
         with sqlite3.connect(self.db_path) as connection:
             rows = connection.execute(
                 """
-                SELECT title, source_id, text
+                SELECT title, source_id, text, bm25(chunks) AS rank
                 FROM chunks
                 WHERE chunks MATCH ?
-                ORDER BY bm25(chunks)
+                ORDER BY rank
                 LIMIT ?
                 """,
-                (query, limit or self.default_limit),
+                (query, candidate_limit),
             ).fetchall()
 
-        chunks: list[RetrievalChunk] = []
-        for title, source_id, text in rows:
-            matched_terms = sum(
-                1 for token in normalized_tokens if token in f"{title} {text}".lower()
-            )
-            chunks.append(
-                RetrievalChunk(
-                    title=title,
-                    snippet=text,
-                    source=source_id,
-                    matched_terms=matched_terms,
+        ranked_chunks: list[tuple[int, float, int, RetrievalChunk]] = []
+        for index, (title, source_id, text, rank) in enumerate(rows):
+            matched_terms = score_query_terms(query_terms, title, text)
+            if matched_terms < threshold:
+                continue
+            ranked_chunks.append(
+                (
+                    matched_terms,
+                    float(rank),
+                    index,
+                    RetrievalChunk(
+                        title=title,
+                        snippet=text,
+                        source=source_id,
+                        matched_terms=matched_terms,
+                    ),
                 )
             )
-        return chunks
+
+        ranked_chunks.sort(key=lambda item: (-item[0], item[1], item[2]))
+        return [chunk for _, _, _, chunk in ranked_chunks[:requested_limit]]
 
     def _validate_index(self) -> None:
         if not self.db_path.exists():
@@ -111,11 +126,125 @@ class SQLiteRetriever:
 
 
 def _question_to_fts_query(question: str) -> str:
-    tokens = sorted(_tokenize(question))
+    tokens = raw_query_terms(question)
     if not tokens:
         return ""
     return " OR ".join(f'"{token}"' for token in tokens)
 
 
-def _tokenize(text: str) -> set[str]:
-    return {token.lower() for token in re.findall(r"[A-Za-z0-9_]{2,}", text)}
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]{2,}")
+QUESTION_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "at",
+    "be",
+    "by",
+    "do",
+    "for",
+    "how",
+    "i",
+    "in",
+    "is",
+    "me",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "what",
+    "when",
+    "where",
+    "who",
+    "why",
+}
+
+
+def raw_query_terms(text: str) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                token
+                for token in _raw_tokens(text)
+                if token not in QUESTION_STOPWORDS
+            }
+        )
+    )
+
+
+def normalized_query_terms(text: str) -> tuple[str, ...]:
+    return tuple(sorted({_normalize_token(token) for token in raw_query_terms(text)}))
+
+
+def minimum_grounding_threshold(query_terms: Sequence[str]) -> int:
+    if not query_terms:
+        return 0
+    if len(query_terms) == 1:
+        return 1
+    if len(query_terms) == 2:
+        return 2
+    return 2
+
+
+def score_query_terms(query_terms: Sequence[str], *text_parts: str) -> int:
+    if not query_terms:
+        return 0
+    haystack_tokens = normalized_text_tokens(" ".join(text_parts))
+    return sum(1 for token in query_terms if token in haystack_tokens)
+
+
+def normalized_text_tokens(text: str) -> set[str]:
+    return {_normalize_token(token) for token in _raw_tokens(text)}
+
+
+def grounded_retrieval_chunks(
+    question: str,
+    chunks: Sequence[RetrievalChunk],
+) -> list[RetrievalChunk]:
+    query_terms = normalized_query_terms(question)
+    threshold = minimum_grounding_threshold(query_terms)
+    grounded: list[tuple[int, int, RetrievalChunk]] = []
+    for index, chunk in enumerate(chunks):
+        score = score_query_terms(query_terms, chunk.title, chunk.snippet)
+        if score < threshold:
+            continue
+        grounded.append(
+            (
+                score,
+                index,
+                RetrievalChunk(
+                    title=chunk.title,
+                    snippet=chunk.snippet,
+                    source=chunk.source,
+                    matched_terms=score,
+                ),
+            )
+        )
+    grounded.sort(key=lambda item: (-item[0], item[1]))
+    return [chunk for _, _, chunk in grounded]
+
+
+def _raw_tokens(text: str) -> set[str]:
+    return {token.lower() for token in TOKEN_PATTERN.findall(text)}
+
+
+def _normalize_token(token: str) -> str:
+    normalized = token.lower()
+    replacements = (
+        ("ification", "ify"),
+        ("ization", "ize"),
+        ("isation", "ise"),
+        ("ation", "ate"),
+    )
+    for suffix, replacement in replacements:
+        if normalized.endswith(suffix) and len(normalized) > len(suffix) + 1:
+            normalized = normalized[: -len(suffix)] + replacement
+            break
+
+    for suffix in ("ing", "ed", "es", "s"):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix) + 2:
+            normalized = normalized[: -len(suffix)]
+            break
+
+    return normalized

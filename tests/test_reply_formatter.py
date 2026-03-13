@@ -1,5 +1,5 @@
 from core.llm_runner import AnswerDraft
-from core.reply_formatter import format_answer_packets, split_text, trim_text
+from core.reply_formatter import derive_short_answer, format_answer_packets, split_text, trim_text
 
 
 def test_format_answer_packets_deduplicates_identical_short_and_long() -> None:
@@ -49,3 +49,12 @@ def test_split_text_respects_part_limit() -> None:
 
 def test_trim_text_appends_ellipsis_when_needed() -> None:
     assert trim_text("one two three four", 12).endswith("...")
+
+
+def test_derive_short_answer_uses_first_sentence() -> None:
+    short = derive_short_answer(
+        "Clean the wound. Cover it with a sterile dressing.",
+        max_chars=24,
+    )
+
+    assert short == "Clean the wound."

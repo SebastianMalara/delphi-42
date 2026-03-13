@@ -178,8 +178,10 @@ def test_repo_ubuntu_ovms_config_profiles_load() -> None:
     assert sim_config.radio.transport == "simulated"
     assert sim_config.llm.provider == "ovms"
     assert sim_config.llm.base_url == "http://127.0.0.1:8000/v3"
+    assert sim_config.knowledge.runtime_zim_fallback_enabled is True
     assert live_config.radio.transport == "meshtastic"
     assert live_config.radio.device.startswith("/dev/ttyACM")
+    assert live_config.knowledge.runtime_zim_fallback_enabled is True
 
 
 def test_load_runtime_config_rejects_invalid_reply_limits(tmp_path: Path) -> None:

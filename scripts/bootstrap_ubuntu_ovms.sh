@@ -191,10 +191,6 @@ download_archive() {
 }
 
 seed_and_build_index() {
-  status "Seeding plaintext corpus from sample_data/plaintext"
-  mkdir -p "$ROOT_ABS/library/plaintext/bootstrap-seed"
-  cp -R "$REPO_ROOT/sample_data/plaintext/." "$ROOT_ABS/library/plaintext/bootstrap-seed/"
-
   (
     cd "$REPO_ROOT"
     status "Extracting ZIM contents into $ROOT_ABS/library/plaintext"

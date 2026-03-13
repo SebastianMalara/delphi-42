@@ -31,3 +31,47 @@ def test_sqlite_retriever_reads_generated_index(tmp_path: Path) -> None:
 def test_sqlite_retriever_requires_existing_index(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         SQLiteRetriever(tmp_path / "missing.db")
+
+
+def test_sqlite_retriever_ignores_stopword_only_candidates(tmp_path: Path) -> None:
+    documents = [
+        ExtractedDocument(
+            title="Water Purification",
+            source_id="water.txt",
+            text="Boil water for one minute before drinking.",
+        ),
+        ExtractedDocument(
+            title="Transit Notes",
+            source_id="notes.txt",
+            text="To travel at dawn, move light and stay aware.",
+        ),
+    ]
+    db_path = tmp_path / "oracle.db"
+    SQLiteIndexBuilder(db_path).build(build_chunks(documents))
+
+    results = SQLiteRetriever(db_path).search("how to purify water")
+
+    assert len(results) == 1
+    assert results[0].source == "water.txt"
+
+
+def test_sqlite_retriever_uses_exact_token_overlap_not_substrings(tmp_path: Path) -> None:
+    documents = [
+        ExtractedDocument(
+            title="Alarm Signals",
+            source_id="alarm.txt",
+            text="An alarm warns nearby teams.",
+        ),
+        ExtractedDocument(
+            title="Broken Arm",
+            source_id="arm.txt",
+            text="Immobilize the arm with a splint and sling.",
+        ),
+    ]
+    db_path = tmp_path / "oracle.db"
+    SQLiteIndexBuilder(db_path).build(build_chunks(documents))
+
+    results = SQLiteRetriever(db_path).search("how to stabilize broken arm")
+
+    assert len(results) == 1
+    assert results[0].source == "arm.txt"

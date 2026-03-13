@@ -83,7 +83,12 @@ class OracleBot:
             event = (
                 f"to={outbound.destination} channel={outbound.channel} "
                 f"kind={delivery_kind} mode={routed.reply.mode.value} "
-                f"hits={routed.reply.retrieval_hits}"
+                f"hits={routed.reply.retrieval_hits} "
+                f"retrieval={routed.reply.retrieval_source} "
+                f"packet_count={len(routed.reply.packets)} "
+                f"sources={','.join(routed.reply.retrieval_sources) or '-'} "
+                f"titles={','.join(routed.reply.retrieval_titles) or '-'} "
+                f"scores={','.join(str(score) for score in routed.reply.retrieval_scores) or '-'}"
             )
             self.logger.info(event)
             events.append(event)

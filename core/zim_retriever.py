@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 from typing import Sequence
 
 from ingest.chunker import chunk_text
 from ingest.html_normalizer import normalize_html_to_text
 
-from .retriever import RetrievalChunk, Retriever
+from .retriever import (
+    RetrievalChunk,
+    Retriever,
+    minimum_grounding_threshold,
+    normalized_query_terms,
+    raw_query_terms,
+    score_query_terms,
+)
 
 
 class RuntimeZimRetriever(Retriever):
@@ -30,20 +36,24 @@ class RuntimeZimRetriever(Retriever):
         ]
 
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
-        tokens = _tokenize(question)
-        if not tokens:
+        raw_terms = raw_query_terms(question)
+        query_terms = normalized_query_terms(question)
+        if not raw_terms or not query_terms:
             return []
 
-        article_budget = min(limit or self.default_limit, self.default_limit)
+        result_limit = limit or self.default_limit
+        article_budget = max(result_limit * 4, 8)
+        threshold = minimum_grounding_threshold(query_terms)
         article_reads = 0
         candidate_chunks: list[tuple[int, int, RetrievalChunk]] = []
+        search_query = " ".join(raw_terms)
 
         for filename, archive in self.archives:
             if article_reads >= article_budget:
                 break
 
             remaining = article_budget - article_reads
-            for article_path in _search_paths(archive, question, remaining):
+            for article_path in _search_paths(archive, search_query, remaining):
                 if article_reads >= article_budget:
                     break
 
@@ -54,26 +64,26 @@ class RuntimeZimRetriever(Retriever):
 
                 source_id = f"{filename}:{article_path}"
                 for chunk in chunk_text(source_id, normalized, title=title):
-                    haystack = f"{title} {chunk.text}".lower()
-                    score = sum(1 for token in tokens if token in haystack)
-                    if score:
-                        candidate_chunks.append(
-                            (
-                                score,
-                                len(candidate_chunks),
-                                RetrievalChunk(
-                                    title=title,
-                                    snippet=chunk.text,
-                                    source=source_id,
-                                    matched_terms=score,
-                                ),
-                            )
+                    score = score_query_terms(query_terms, title, chunk.text)
+                    if score < threshold:
+                        continue
+                    candidate_chunks.append(
+                        (
+                            score,
+                            len(candidate_chunks),
+                            RetrievalChunk(
+                                title=title,
+                                snippet=chunk.text,
+                                source=source_id,
+                                matched_terms=score,
+                            ),
                         )
+                    )
 
                 article_reads += 1
 
         candidate_chunks.sort(key=lambda item: (-item[0], item[1]))
-        return [chunk for _, _, chunk in candidate_chunks[:article_budget]]
+        return [chunk for _, _, chunk in candidate_chunks[:result_limit]]
 
     def _open_archive(self, source_path: Path):
         try:
@@ -128,7 +138,3 @@ def _read_article(archive, article_path: str) -> tuple[str, str]:
 
 def _path_to_title(article_path: str) -> str:
     return Path(article_path).stem.replace("_", " ")
-
-
-def _tokenize(text: str) -> set[str]:
-    return {token.lower() for token in re.findall(r"[A-Za-z0-9_]{2,}", text)}

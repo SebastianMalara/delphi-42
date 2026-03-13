@@ -166,10 +166,19 @@ def test_render_runtime_artifacts_writes_local_configs_state_and_helpers(tmp_pat
     state = load_state(tmp_path)
 
     assert sim_config.radio.transport == "simulated"
+    assert sim_config.knowledge.runtime_zim_fallback_enabled is True
     assert sim_config.knowledge.runtime_zim_allowlist == (DEFAULT_ZIM_ALIAS,)
     assert live_config.radio.device == "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
+    assert live_config.knowledge.runtime_zim_fallback_enabled is True
     assert live_config.knowledge.runtime_zim_allowlist == (DEFAULT_ZIM_ALIAS,)
     assert state is not None
     assert state.archive_filename == "wikipedia_en_medicine_nopic_2026-01.zim"
     assert Path(payload["run_live_path"]).exists()
     assert Path(payload["run_live_path"]).stat().st_mode & 0o111
+
+
+def test_bootstrap_script_does_not_seed_sample_plaintext_into_runtime() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts/bootstrap_ubuntu_ovms.sh"
+    script_text = script_path.read_text(encoding="utf-8")
+
+    assert "sample_data/plaintext" not in script_text
