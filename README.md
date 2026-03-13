@@ -6,7 +6,7 @@ The design baseline is a hybrid offline knowledge stack: Kiwix serves the larger
 
 Active development is now container-first for the portable parts of the stack. On macOS or any `arm64` Linux host, Delphi-42 runs through `docker compose` with simulated radio, a mock OpenAI-compatible API by default, and optional Ollama for manual demos. On Raspberry Pi 5, the same Delphi app image can run in Compose while the M5 `llm-openai-api` service stays host-managed.
 
-For the fastest software validation loop on an Apple Silicon Mac, use the host-native M1 path in [`docs/operations/mac_m1_pro_quickstart.md`](docs/operations/mac_m1_pro_quickstart.md): Delphi-42 in a `uv`-managed environment, LM Studio on the host, optional Kiwix in Docker, staged `.zim` testing, and an optional live T114 over USB.
+For the fastest software validation loop on an Apple Silicon Mac, use the host-native M1 path in [`docs/operations/mac_m1_pro_quickstart.md`](docs/operations/mac_m1_pro_quickstart.md): Delphi-42 in a `uv`-managed environment, LM Studio on the host, optional Kiwix in Docker, staged `.zim` testing, and a supervised live T114 path over USB.
 
 This repository now treats [`docs/README.md`](docs/README.md) as the documentation entry point and the source of truth for how the system should be built, deployed, tested, and operated.
 
@@ -53,7 +53,7 @@ uv run python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
 DELPHI_CONFIG=config/oracle.mac.sim.yaml uv run python -m bot.dev_console
 ```
 
-Full instructions for LM Studio, real `.zim` files, optional Kiwix, and a live T114 are in [`docs/operations/mac_m1_pro_quickstart.md`](docs/operations/mac_m1_pro_quickstart.md).
+Full instructions for LM Studio, real `.zim` files, optional Kiwix, and the supervised live T114 lane are in [`docs/operations/mac_m1_pro_quickstart.md`](docs/operations/mac_m1_pro_quickstart.md).
 
 Containerized dev path:
 

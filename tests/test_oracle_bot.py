@@ -1,9 +1,17 @@
 import logging
 from pathlib import Path
 
+import pytest
+
 from bot.message_router import MessageRouter
-from bot.oracle_bot import OracleBot, build_oracle_bot
-from bot.radio_interface import DryRunRadio, IncomingMessage
+from bot.oracle_bot import OracleBot, POSITION_UNAVAILABLE_TEXT, build_oracle_bot
+from bot.radio_interface import (
+    DryRunRadio,
+    IncomingMessage,
+    OutboundMessage,
+    PositionUnavailableError,
+    RadioTransportError,
+)
 from core.oracle_service import OracleService
 from core.retriever import KeywordRetriever, RetrievalChunk
 from ingest.build_index import SQLiteIndexBuilder, build_chunks
@@ -172,3 +180,131 @@ llm:
     bot = build_oracle_bot(config_path, logger=logging.getLogger("test.zim-bootstrap"))
 
     assert isinstance(bot.radio, DryRunRadio)
+
+
+class PositionUnavailableRadio(DryRunRadio):
+    def send_position(self, message: OutboundMessage) -> None:
+        raise PositionUnavailableError("Meshtastic local node does not have a position fix")
+
+
+class FailingReceiveRadio(DryRunRadio):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def receive(self) -> list[IncomingMessage]:
+        raise RadioTransportError("receive failed")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FailingSendRadio(DryRunRadio):
+    def __init__(self, inbox: list[IncomingMessage]) -> None:
+        super().__init__(inbox=inbox)
+        self.closed = False
+
+    def send_text(self, message: OutboundMessage) -> None:
+        raise RadioTransportError("send failed")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class StopLoop(RuntimeError):
+    pass
+
+
+def _build_test_router() -> MessageRouter:
+    return MessageRouter(
+        OracleService(
+            retriever=KeywordRetriever(
+                [
+                    RetrievalChunk(
+                        title="Water Purification",
+                        snippet="Boil water for one minute before drinking.",
+                        source="field-guide",
+                    )
+                ]
+            )
+        )
+    )
+
+
+def test_oracle_bot_returns_text_fallback_when_position_is_unavailable() -> None:
+    radio = PositionUnavailableRadio(
+        inbox=[
+            IncomingMessage(
+                sender_id="node-1",
+                text="where",
+            )
+        ]
+    )
+    bot = OracleBot(radio=radio, router=MessageRouter(OracleService()))
+
+    events = bot.process_inbox()
+
+    assert [message.text for message in radio.sent] == [
+        "Sending a private position packet.",
+        POSITION_UNAVAILABLE_TEXT,
+    ]
+    assert all(message.send_position is False for message in radio.sent)
+    assert "kind=text" in events[-1]
+
+
+def test_oracle_bot_run_forever_recovers_after_receive_failure() -> None:
+    failing_radio = FailingReceiveRadio()
+    recovery_radio = DryRunRadio(
+        inbox=[IncomingMessage(sender_id="node-1", text="how do i purify water")]
+    )
+    sleeps: list[float] = []
+
+    def sleep_fn(seconds: float) -> None:
+        sleeps.append(seconds)
+        if seconds == 0.5:
+            raise StopLoop("done")
+
+    bot = OracleBot(
+        radio=failing_radio,
+        router=_build_test_router(),
+        radio_factory=lambda: recovery_radio,
+        sleep_fn=sleep_fn,
+        logger=logging.getLogger("test.receive-recovery"),
+    )
+
+    with pytest.raises(StopLoop, match="done"):
+        bot.run_forever(poll_interval_seconds=0.5)
+
+    assert failing_radio.closed is True
+    assert recovery_radio.sent[0].destination == "node-1"
+    assert sleeps[:2] == [1.0, 0.5]
+
+
+def test_oracle_bot_run_forever_recovers_after_send_failure() -> None:
+    failing_radio = FailingSendRadio(
+        inbox=[IncomingMessage(sender_id="node-1", text="how do i purify water")]
+    )
+    recovery_radio = DryRunRadio(
+        inbox=[IncomingMessage(sender_id="node-2", text="how do i purify water")]
+    )
+    sleeps: list[float] = []
+
+    def sleep_fn(seconds: float) -> None:
+        sleeps.append(seconds)
+        if seconds == 0.25:
+            raise StopLoop("done")
+
+    bot = OracleBot(
+        radio=failing_radio,
+        router=_build_test_router(),
+        radio_factory=lambda: recovery_radio,
+        sleep_fn=sleep_fn,
+        logger=logging.getLogger("test.send-recovery"),
+    )
+
+    with pytest.raises(StopLoop, match="done"):
+        bot.run_forever(poll_interval_seconds=0.25)
+
+    assert failing_radio.closed is True
+    assert recovery_radio.sent[0].destination == "node-2"
+    assert sleeps[:2] == [1.0, 0.25]

@@ -16,7 +16,7 @@ This is the preferred fast-feedback software lane for Delphi-42:
 - run LM Studio on the host as the OpenAI-compatible model API
 - use Kiwix in Docker only if you want archive browsing
 - keep real `.zim` archives under `data/library/zim`
-- start with simulated radio, then switch to a live T114 over USB
+- start with simulated radio, then switch to a supervised live T114 over USB
 
 ## Prerequisites
 
@@ -128,7 +128,7 @@ Expected results:
 - the extracted archive can be indexed into a second SQLite database
 - runtime `.zim` fallback works even before you switch the main runtime to the extracted index
 
-## Stage C: Live T114 Over USB
+## Stage C: Supervised Live T114 Over USB
 
 1. Attach the T114 to the Mac over USB.
 2. List visible serial devices:
@@ -149,7 +149,7 @@ The first live preflight run will usually fail until you replace the placeholder
 uv run python -m scripts.mac_preflight --config config/oracle.mac.live.yaml
 ```
 
-5. Start the live bot:
+5. Only continue if preflight exits successfully, then start the live bot:
 
 ```bash
 DELPHI_CONFIG=config/oracle.mac.live.yaml uv run python -m bot.oracle_bot
@@ -162,7 +162,9 @@ Expected results:
 - Delphi-42 opens the configured serial device successfully
 - public messages are ignored
 - direct messages receive replies over the live mesh path
-- `where`/`pos` works only if the local node has a valid position fix
+- `where`/`pos` sends a private position packet when the local node has a valid fix
+- `where`/`pos` returns `Position fix unavailable right now.` and stays alive when the local node has no valid fix
+- temporary transport faults trigger reconnect attempts on the configured serial path; if macOS re-enumerates the T114 under a different path, rerun preflight, update the config if needed, and restart the bot
 
 ## Optional Kiwix
 

@@ -2,6 +2,8 @@ from bot.radio_interface import (
     MESHTASTIC_BROADCAST_ID,
     MeshtasticRadioClient,
     OutboundMessage,
+    PositionUnavailableError,
+    RadioTransportError,
 )
 
 
@@ -52,6 +54,17 @@ class StubInterface:
 
     def close(self) -> None:
         self.closed = True
+
+
+class NoPositionStubInterface(StubInterface):
+    def __init__(self, devPath: str) -> None:
+        super().__init__(devPath)
+        self.nodesByNum = {42: {"position": {}}}
+
+
+class FailingSendInterface(StubInterface):
+    def sendText(self, text: str, destinationId: str, channelIndex: int) -> None:
+        raise RuntimeError("serial write failed")
 
 
 def test_meshtastic_radio_client_normalizes_packets_and_sends_responses() -> None:
@@ -122,3 +135,58 @@ def test_meshtastic_radio_client_normalizes_packets_and_sends_responses() -> Non
         }
     ]
     assert interface.closed is True
+
+
+def test_meshtastic_radio_client_raises_position_unavailable_without_fix() -> None:
+    pubsub = StubPubSub()
+    interface = NoPositionStubInterface("/dev/ttyUSB0")
+    client = MeshtasticRadioClient(
+        "/dev/ttyUSB0",
+        channel=3,
+        interface_factory=lambda devPath: interface,
+        pubsub_module=pubsub,
+    )
+
+    try:
+        try:
+            client.send_position(
+                OutboundMessage(
+                    destination="!abcd",
+                    text="[private position packet]",
+                    channel=3,
+                    send_position=True,
+                )
+            )
+        except PositionUnavailableError as exc:
+            assert "position fix" in str(exc)
+        else:
+            raise AssertionError("expected PositionUnavailableError")
+    finally:
+        client.close()
+
+
+def test_meshtastic_radio_client_wraps_send_failures() -> None:
+    pubsub = StubPubSub()
+    interface = FailingSendInterface("/dev/ttyUSB0")
+    client = MeshtasticRadioClient(
+        "/dev/ttyUSB0",
+        channel=3,
+        interface_factory=lambda devPath: interface,
+        pubsub_module=pubsub,
+    )
+
+    try:
+        try:
+            client.send_text(
+                OutboundMessage(
+                    destination="!abcd",
+                    text="reply",
+                    channel=3,
+                )
+            )
+        except RadioTransportError as exc:
+            assert "sendText failed" in str(exc)
+        else:
+            raise AssertionError("expected RadioTransportError")
+    finally:
+        client.close()

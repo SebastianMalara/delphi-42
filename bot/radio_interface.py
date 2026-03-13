@@ -9,6 +9,14 @@ MESHTASTIC_BROADCAST_ID = "^all"
 MESHTASTIC_BROADCAST_NUM = 0xFFFFFFFF
 
 
+class RadioTransportError(RuntimeError):
+    """Raised when the radio transport cannot send, receive, or initialize."""
+
+
+class PositionUnavailableError(RadioTransportError):
+    """Raised when the local node cannot provide a private position packet."""
+
+
 class RadioClient(Protocol):
     def receive(self) -> list["IncomingMessage"]:
         ...
@@ -100,8 +108,13 @@ class MeshtasticRadioClient:
 
         self._pubsub = pubsub_module
         self._callback = self._handle_receive
+        try:
+            self._interface = interface_factory(devPath=device_path)
+        except Exception as exc:
+            raise RadioTransportError(
+                f"Failed to open Meshtastic interface on {device_path}"
+            ) from exc
         self._pubsub.subscribe(self._callback, "meshtastic.receive")
-        self._interface = interface_factory(devPath=device_path)
 
     def receive(self) -> list[IncomingMessage]:
         messages = list(self._queue)
@@ -109,23 +122,35 @@ class MeshtasticRadioClient:
         return messages
 
     def send_text(self, message: OutboundMessage) -> None:
-        self._interface.sendText(
-            message.text,
-            destinationId=message.destination,
-            channelIndex=message.channel,
-        )
+        try:
+            self._interface.sendText(
+                message.text,
+                destinationId=message.destination,
+                channelIndex=message.channel,
+            )
+        except Exception as exc:
+            raise RadioTransportError("Meshtastic sendText failed") from exc
 
     def send_position(self, message: OutboundMessage) -> None:
         position = self._current_position()
-        self._interface.sendPosition(
-            destinationId=message.destination,
-            channelIndex=message.channel,
-            **position,
-        )
+        try:
+            self._interface.sendPosition(
+                destinationId=message.destination,
+                channelIndex=message.channel,
+                **position,
+            )
+        except Exception as exc:
+            raise RadioTransportError("Meshtastic sendPosition failed") from exc
 
     def close(self) -> None:
-        self._pubsub.unsubscribe(self._callback, "meshtastic.receive")
-        self._interface.close()
+        try:
+            self._pubsub.unsubscribe(self._callback, "meshtastic.receive")
+        except Exception:
+            pass
+        try:
+            self._interface.close()
+        except Exception:
+            pass
 
     def _handle_receive(self, packet: dict, interface: Any) -> None:
         text = (
@@ -162,7 +187,9 @@ class MeshtasticRadioClient:
     def _current_position(self) -> dict[str, float]:
         local_node = getattr(self._interface, "localNode", None)
         if local_node is None:
-            raise RuntimeError("Meshtastic local node is unavailable; cannot send position")
+            raise PositionUnavailableError(
+                "Meshtastic local node is unavailable; cannot send position"
+            )
 
         nodes_by_num = getattr(self._interface, "nodesByNum", {}) or {}
         node_info = nodes_by_num.get(local_node.nodeNum, {})
@@ -170,7 +197,9 @@ class MeshtasticRadioClient:
         latitude = position.get("latitude")
         longitude = position.get("longitude")
         if latitude is None or longitude is None:
-            raise RuntimeError("Meshtastic local node does not have a position fix")
+            raise PositionUnavailableError(
+                "Meshtastic local node does not have a position fix"
+            )
 
         altitude = position.get("altitude")
         precision_bits = position.get("precisionBits", 13)

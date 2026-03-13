@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Callable
 
 from core.llm_runner import LLMRunner, ModelUnavailableError, OpenAICompatibleRunner
 from core.oracle_service import OracleService
@@ -12,10 +13,18 @@ from core.runtime_config import ConfigError, OracleRuntimeConfig, load_runtime_c
 from core.zim_retriever import RuntimeZimRetriever
 
 from .message_router import MessageRouter, RoutedReply
-from .radio_interface import DryRunRadio, MeshtasticRadioClient, RadioClient
+from .radio_interface import (
+    DryRunRadio,
+    MeshtasticRadioClient,
+    OutboundMessage,
+    PositionUnavailableError,
+    RadioClient,
+    RadioTransportError,
+)
 
 
 LOGGER = logging.getLogger("delphi42.bot")
+POSITION_UNAVAILABLE_TEXT = "Position fix unavailable right now."
 
 
 class OracleBot:
@@ -27,10 +36,16 @@ class OracleBot:
         router: MessageRouter,
         *,
         logger: logging.Logger | None = None,
+        radio_factory: Callable[[], RadioClient] | None = None,
+        sleep_fn: Callable[[float], None] = time.sleep,
+        reconnect_backoff_seconds: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0, 30.0),
     ) -> None:
         self.radio = radio
         self.router = router
         self.logger = logger or LOGGER
+        self.radio_factory = radio_factory or (lambda: radio)
+        self.sleep_fn = sleep_fn
+        self.reconnect_backoff_seconds = reconnect_backoff_seconds
 
     def process_inbox(self) -> list[str]:
         delivery_log: list[str] = []
@@ -51,29 +66,74 @@ class OracleBot:
     def run_forever(self, poll_interval_seconds: float = 1.0) -> None:
         try:
             while True:
-                self.process_inbox()
-                time.sleep(poll_interval_seconds)
+                try:
+                    self.process_inbox()
+                except RadioTransportError as exc:
+                    self.logger.warning("radio transport failure: %s", exc)
+                    self._recover_radio()
+                    continue
+                self.sleep_fn(poll_interval_seconds)
         finally:
-            self.radio.close()
+            self._safe_close_radio()
 
     def _deliver(self, routed: RoutedReply) -> list[str]:
         events: list[str] = []
         for response in routed.messages:
-            if response.send_position:
-                self.radio.send_position(response)
-                delivery_kind = "position"
-            else:
-                self.radio.send_text(response)
-                delivery_kind = "text"
-
+            outbound, delivery_kind = self._send_response(response)
             event = (
-                f"to={response.destination} channel={response.channel} "
+                f"to={outbound.destination} channel={outbound.channel} "
                 f"kind={delivery_kind} mode={routed.reply.mode.value} "
                 f"hits={routed.reply.retrieval_hits}"
             )
             self.logger.info(event)
             events.append(event)
         return events
+
+    def _send_response(self, response: OutboundMessage) -> tuple[OutboundMessage, str]:
+        if not response.send_position:
+            self.radio.send_text(response)
+            return response, "text"
+
+        try:
+            self.radio.send_position(response)
+            return response, "position"
+        except PositionUnavailableError as exc:
+            fallback = OutboundMessage(
+                destination=response.destination,
+                text=POSITION_UNAVAILABLE_TEXT,
+                channel=response.channel,
+            )
+            self.logger.warning("position unavailable for %s: %s", response.destination, exc)
+            self.radio.send_text(fallback)
+            return fallback, "text"
+
+    def _recover_radio(self) -> None:
+        self._safe_close_radio()
+        attempt = 0
+        delays = self.reconnect_backoff_seconds or (0.0,)
+        while True:
+            delay = delays[min(attempt, len(delays) - 1)]
+            if delay > 0:
+                self.sleep_fn(delay)
+            try:
+                self.radio = self.radio_factory()
+            except Exception as exc:
+                attempt += 1
+                self.logger.warning(
+                    "radio reconnect attempt %s failed on the configured path: %s",
+                    attempt,
+                    exc,
+                )
+                continue
+
+            self.logger.info("radio reconnect succeeded on the configured path")
+            return
+
+    def _safe_close_radio(self) -> None:
+        try:
+            self.radio.close()
+        except Exception as exc:
+            self.logger.warning("radio close failed during recovery: %s", exc)
 
 
 def load_config(path: Path) -> OracleRuntimeConfig:
@@ -92,8 +152,14 @@ def build_oracle_bot(
     logger.info("loaded config %s", config.summary())
 
     router = build_router(config, logger=logger)
-    radio = build_radio(config, logger=logger)
-    return OracleBot(radio=radio, router=router, logger=logger)
+    radio_factory = lambda: build_radio(config, logger=logger)
+    radio = radio_factory()
+    return OracleBot(
+        radio=radio,
+        router=router,
+        logger=logger,
+        radio_factory=radio_factory,
+    )
 
 
 def build_router(

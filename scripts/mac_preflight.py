@@ -10,6 +10,7 @@ from typing import Callable
 from urllib import request
 
 from bot.oracle_bot import load_config
+from core.llm_runner import ModelExecutionError, ModelUnavailableError, OpenAICompatibleRunner
 from core.retriever import SQLiteRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig
 
@@ -27,15 +28,18 @@ def run_preflight(
     import_module_fn: Callable[[str], object] = importlib.import_module,
     urlopen_fn: Callable[..., object] = request.urlopen,
     glob_fn: Callable[[str], list[str]] = glob.glob,
+    runner_factory: Callable[..., object] = OpenAICompatibleRunner,
 ) -> tuple[OracleRuntimeConfig, list[CheckResult]]:
     config = load_config(config_path)
     results = [
         CheckResult("config", True, config.summary()),
+        _check_placeholder_values(config),
         _check_import("openai", import_module_fn),
         _check_import("libzim.reader", import_module_fn),
         _check_import("meshtastic.serial_interface", import_module_fn),
         _check_import("pubsub", import_module_fn),
         _check_model_service(config, urlopen_fn),
+        _check_completion_probe(config, runner_factory),
         _check_index(config.knowledge.index_path),
         _check_runtime_zim_files(config),
         _check_serial_devices(config, glob_fn),
@@ -82,6 +86,37 @@ def _check_model_service(
     return CheckResult("llm-service", True, f"model visible: {config.llm.model}")
 
 
+def _check_completion_probe(
+    config: OracleRuntimeConfig,
+    runner_factory: Callable[..., object],
+) -> CheckResult:
+    if config.llm.backend == "deterministic":
+        return CheckResult("llm-completion", True, "deterministic backend selected")
+
+    try:
+        runner = runner_factory(
+            base_url=config.llm.base_url,
+            model=config.llm.model,
+            api_key=config.llm.api_key,
+            timeout_seconds=config.llm.timeout_seconds,
+        )
+        answer = runner.generate(
+            "Context:\n"
+            "- Smoke-test context for the local LM Studio server.\n\n"
+            "Question:\n"
+            "Reply with a short readiness confirmation."
+        )
+    except (ModelUnavailableError, ModelExecutionError) as exc:
+        return CheckResult("llm-completion", False, str(exc))
+    except Exception as exc:
+        return CheckResult("llm-completion", False, f"completion probe failed: {exc}")
+
+    short_answer = getattr(answer, "short_answer", "")
+    if not isinstance(short_answer, str) or not short_answer.strip():
+        return CheckResult("llm-completion", False, "completion probe returned an empty answer")
+    return CheckResult("llm-completion", True, "completion probe succeeded")
+
+
 def _check_index(index_path: Path) -> CheckResult:
     try:
         SQLiteRetriever(index_path)
@@ -116,6 +151,22 @@ def _check_runtime_zim_files(config: OracleRuntimeConfig) -> CheckResult:
         True,
         "allowlisted archives present: " + ", ".join(config.knowledge.runtime_zim_allowlist),
     )
+
+
+def _check_placeholder_values(config: OracleRuntimeConfig) -> CheckResult:
+    placeholders: list[str] = []
+    if config.radio.transport == "meshtastic" and "REPLACE_ME" in config.radio.device:
+        placeholders.append("radio.device")
+    if config.llm.backend != "deterministic" and config.llm.model.startswith("replace-with-"):
+        placeholders.append("llm.model")
+
+    if placeholders:
+        return CheckResult(
+            "config-placeholders",
+            False,
+            "replace placeholder values before live use: " + ", ".join(placeholders),
+        )
+    return CheckResult("config-placeholders", True, "no placeholder values detected")
 
 
 def _check_serial_devices(
