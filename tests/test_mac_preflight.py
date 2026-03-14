@@ -48,6 +48,14 @@ class FakeRunner:
         return AnswerDraft(short_answer="ready", extended_answer=f"ready: {prompt}")
 
 
+class PromptCapturingRunner(FakeRunner):
+    last_prompt: str = ""
+
+    def generate(self, prompt: str) -> AnswerDraft:
+        type(self).last_prompt = prompt
+        return super().generate(prompt)
+
+
 def test_run_preflight_passes_for_simulated_mac_config(tmp_path: Path) -> None:
     index_path = tmp_path / "data/index/oracle-mac.db"
     _build_index(index_path)
@@ -288,6 +296,49 @@ llm:
     )
 
     assert all(result.ok for result in results)
+
+
+def test_run_preflight_completion_probe_uses_structured_prompt(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-mac.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.mac.sim.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: simulated
+  device: ""
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: lm-studio
+  base_url: http://127.0.0.1:1234/v1
+  model: lmstudio-qwen
+  api_key: lm-studio
+""".strip(),
+        encoding="utf-8",
+    )
+
+    PromptCapturingRunner.last_prompt = ""
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse(
+            {"data": [{"id": "lmstudio-qwen"}]}
+        ),
+        glob_fn=lambda pattern: ["/dev/cu.usbmodem1101"] if pattern.startswith("/dev/cu.") else [],
+        runner_factory=lambda **kwargs: PromptCapturingRunner(**kwargs),
+    )
+
+    completion_check = next(result for result in results if result.name == "llm-completion")
+    assert completion_check.ok is True
+    assert "Return exactly this format:" in PromptCapturingRunner.last_prompt
+    assert "SHORT: <one-line direct answer>" in PromptCapturingRunner.last_prompt
+    assert "LONG:" in PromptCapturingRunner.last_prompt
 
 
 def test_run_preflight_flags_provider_path_mismatch(tmp_path: Path) -> None:

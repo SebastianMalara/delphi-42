@@ -41,7 +41,10 @@ Useful overrides:
 ./scripts/bootstrap_ubuntu_ovms.sh --zim-profile maxi
 ./scripts/bootstrap_ubuntu_ovms.sh --radio-device /dev/serial/by-id/usb-Heltec_...
 ./scripts/bootstrap_ubuntu_ovms.sh --refresh-zim
+./scripts/bootstrap_ubuntu_ovms.sh --reuse-index
 ```
+
+Use `--reuse-index` on reruns when `artifacts/ubuntu-ovms/library/plaintext/` and `artifacts/ubuntu-ovms/index/oracle-ubuntu-ovms.db` are already populated and you only want to restart OVMS, regenerate local wrappers, or rerun preflight without extracting/indexing again.
 
 The generated helper commands are:
 

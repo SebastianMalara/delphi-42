@@ -182,3 +182,13 @@ def test_bootstrap_script_does_not_seed_sample_plaintext_into_runtime() -> None:
     script_text = script_path.read_text(encoding="utf-8")
 
     assert "sample_data/plaintext" not in script_text
+
+
+def test_bootstrap_script_supports_reusing_existing_index_artifacts() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts/bootstrap_ubuntu_ovms.sh"
+    script_text = script_path.read_text(encoding="utf-8")
+
+    assert "--reuse-index" in script_text
+    assert "Reusing existing extracted plaintext" in script_text
+    assert "Reusing existing retrieval index" in script_text
+    assert "--reuse-index requested but index is missing" in script_text

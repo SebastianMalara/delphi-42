@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from bot.oracle_bot import load_config
 from core.llm_runner import ModelExecutionError, ModelUnavailableError, OpenAICompatibleRunner
+from core.prompt_builder import build_prompt
 from core.retriever import SQLiteRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig
 
@@ -143,10 +144,10 @@ def _check_completion_probe(
             timeout_seconds=config.llm.timeout_seconds,
         )
         answer = runner.generate(
-            "Context:\n"
-            "- Smoke-test context for the local model server.\n\n"
-            "Question:\n"
-            "Reply with a short readiness confirmation."
+            build_prompt(
+                "Reply with a short readiness confirmation.",
+                [],
+            )
         )
     except (ModelUnavailableError, ModelExecutionError) as exc:
         return CheckResult("llm-completion", False, str(exc))

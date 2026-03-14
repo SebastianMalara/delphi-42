@@ -6,6 +6,7 @@ ZIM_PROFILE="nopic"
 ZIM_URL=""
 RADIO_DEVICE="auto"
 REFRESH_ZIM=0
+REUSE_INDEX=0
 LIVE_RELOGIN_REQUIRED=0
 
 MODEL_ID="OpenVINO/Phi-3.5-mini-instruct-int4-ov"
@@ -36,6 +37,7 @@ Options:
   --zim-url URL           Override the Kiwix download URL.
   --radio-device PATH     Explicit radio path, or "auto" to detect Heltec by-id path.
   --refresh-zim           Ignore pinned state and resolve/download the ZIM again.
+  --reuse-index           Reuse existing extracted plaintext and SQLite index instead of rebuilding them.
   --help                  Show this help.
 EOF
 }
@@ -60,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --refresh-zim)
       REFRESH_ZIM=1
+      shift
+      ;;
+    --reuse-index)
+      REUSE_INDEX=1
       shift
       ;;
     --help|-h)
@@ -205,6 +211,27 @@ seed_and_build_index() {
   )
 }
 
+reuse_existing_index() {
+  local plaintext_dir="$ROOT_ABS/library/plaintext"
+  local index_path="$ROOT_ABS/index/oracle-ubuntu-ovms.db"
+
+  if [[ ! -d "$plaintext_dir" ]]; then
+    echo "--reuse-index requested but plaintext directory is missing: $plaintext_dir" >&2
+    exit 1
+  fi
+  if ! find "$plaintext_dir" -type f -print -quit | grep -q .; then
+    echo "--reuse-index requested but plaintext directory is empty: $plaintext_dir" >&2
+    exit 1
+  fi
+  if [[ ! -f "$index_path" ]]; then
+    echo "--reuse-index requested but index is missing: $index_path" >&2
+    exit 1
+  fi
+
+  status "Reusing existing extracted plaintext at $plaintext_dir"
+  status "Reusing existing retrieval index at $index_path"
+}
+
 detect_radio() {
   python3 "$HELPER" detect-radio --radio-device "$RADIO_DEVICE" --stable-symlink "$STABLE_T114_PATH"
 }
@@ -248,7 +275,13 @@ wait_for_ovms() {
 import json
 import sys
 
-payload = json.load(sys.stdin)
+raw = sys.stdin.read().strip()
+if not raw:
+    raise SystemExit(1)
+try:
+    payload = json.loads(raw)
+except json.JSONDecodeError:
+    raise SystemExit(1)
 target = sys.argv[1]
 ids = [str(item.get("id", "")).strip() for item in payload.get("data", [])]
 raise SystemExit(0 if target in ids else 1)
@@ -311,7 +344,11 @@ main() {
   fi
 
   download_archive "$archive_url" "$archive_filename"
-  seed_and_build_index
+  if [[ "$REUSE_INDEX" -eq 1 ]]; then
+    reuse_existing_index
+  else
+    seed_and_build_index
+  fi
 
   ensure_docker_service
   restart_ovms_container
