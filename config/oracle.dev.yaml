@@ -4,6 +4,10 @@ radio:
   transport: simulated
   device: ""
   channel: 0
+  text_packet_spacing_seconds: 0.0
+  text_packet_retry_attempts: 0
+  text_packet_retry_delay_seconds: 0.0
+  max_text_payload_bytes: 0
 
 privacy:
   answer_public_messages: false

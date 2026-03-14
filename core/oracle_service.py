@@ -20,11 +20,11 @@ from .prompt_builder import build_long_answer_prompt, build_prompt
 from .reply_formatter import derive_short_answer, format_answer_packets
 from .retriever import (
     NullRetriever,
+    RetrievalAssessment,
     RetrievalChunk,
+    RetrievalConfidence,
     Retriever,
-    grounded_retrieval_chunks,
-    minimum_grounding_threshold,
-    normalized_query_terms,
+    assess_retrieval,
 )
 from .runtime_config import ReplyConfig
 
@@ -46,6 +46,7 @@ class OracleReply:
     mode: ReplyMode = ReplyMode.HELP
     retrieval_hits: int = 0
     retrieval_source: str = "none"
+    retrieval_confidence: str = RetrievalConfidence.WEAK.value
     retrieval_sources: tuple[str, ...] = ()
     retrieval_titles: tuple[str, ...] = ()
     retrieval_scores: tuple[int, ...] = ()
@@ -53,6 +54,18 @@ class OracleReply:
     @property
     def text(self) -> str:
         return self.packets[0] if self.packets else ""
+
+
+@dataclass(frozen=True)
+class RetrievalDecision:
+    source: str
+    confidence: RetrievalConfidence
+    anchor_terms: tuple[str, ...]
+    context: tuple[RetrievalChunk, ...]
+    candidates: tuple[RetrievalChunk, ...]
+    should_use_model: bool
+    selected_chunk: RetrievalChunk | None = None
+    best_score: int = 0
 
 
 class OracleService:
@@ -95,37 +108,68 @@ class OracleService:
             mode=ReplyMode.HELP,
         )
 
-    def _handle_ask(self, question: str) -> OracleReply:
-        query_terms = normalized_query_terms(question)
-        threshold = minimum_grounding_threshold(query_terms)
+    def inspect_ask(self, question: str) -> RetrievalDecision:
+        primary = self._assess_retriever(question, self.retriever)
+        selected = primary
+        retrieval_source = "sqlite" if primary.context else "none"
 
-        primary_context = grounded_retrieval_chunks(
-            question,
-            self.retriever.search(question, limit=self.retrieval_limit),
+        if self.fallback_retriever is not None and primary.confidence is not RetrievalConfidence.STRONG:
+            fallback = self._assess_retriever(question, self.fallback_retriever)
+            if self._assessment_rank(fallback) > self._assessment_rank(primary):
+                selected = fallback
+                retrieval_source = "zim" if primary.confidence is RetrievalConfidence.WEAK else "sqlite+zim"
+
+        if selected.confidence is RetrievalConfidence.WEAK or not selected.context:
+            retrieval_source = "none"
+
+        return RetrievalDecision(
+            source=retrieval_source,
+            confidence=selected.confidence,
+            anchor_terms=selected.anchor_terms,
+            context=selected.context,
+            candidates=selected.candidates,
+            should_use_model=(
+                selected.confidence is RetrievalConfidence.STRONG and bool(selected.context)
+            ),
+            selected_chunk=selected.selected_chunk,
+            best_score=selected.best_score,
         )
-        context = primary_context
-        retrieval_source = "sqlite" if primary_context else "none"
 
-        primary_best = self._best_score(primary_context)
-        if self.fallback_retriever is not None and (
-            not primary_context or primary_best <= threshold
-        ):
-            fallback_context = grounded_retrieval_chunks(
-                question,
-                self.fallback_retriever.search(question, limit=self.retrieval_limit),
-            )
-            fallback_best = self._best_score(fallback_context)
-            if fallback_context and (not primary_context or fallback_best > primary_best):
-                context = fallback_context
-                retrieval_source = "zim" if not primary_context else "sqlite+zim"
-
+    def _handle_ask(self, question: str) -> OracleReply:
+        decision = self.inspect_ask(question)
+        context = list(decision.context)
         retrieval_hits = len(context)
-        if not context:
+
+        if decision.confidence is RetrievalConfidence.WEAK or not context:
             return OracleReply(
                 packets=(NO_GROUNDED_ANSWER,),
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
-                retrieval_hits=retrieval_hits,
+                retrieval_hits=0,
                 retrieval_source="none",
+                retrieval_confidence=decision.confidence.value,
+                retrieval_sources=self._retrieval_sources(decision.candidates),
+                retrieval_titles=self._retrieval_titles(decision.candidates),
+                retrieval_scores=self._retrieval_scores(decision.candidates),
+            )
+
+        if not decision.should_use_model:
+            draft = self._deterministic_context_draft(context)
+            if draft is None:
+                return self._single_packet(
+                    NO_GROUNDED_ANSWER,
+                    mode=ReplyMode.NO_GROUNDED_ANSWER,
+                    retrieval_confidence=decision.confidence.value,
+                    retrieval_chunks=decision.candidates,
+                )
+            return OracleReply(
+                packets=self._format_packets(draft),
+                mode=ReplyMode.DETERMINISTIC_FALLBACK,
+                retrieval_hits=retrieval_hits,
+                retrieval_source=decision.source,
+                retrieval_confidence=decision.confidence.value,
+                retrieval_sources=self._retrieval_sources(decision.candidates),
+                retrieval_titles=self._retrieval_titles(decision.candidates),
+                retrieval_scores=self._retrieval_scores(decision.candidates),
             )
 
         prompt = build_prompt(
@@ -150,10 +194,11 @@ class OracleService:
                     packets=packets,
                     mode=mode,
                     retrieval_hits=retrieval_hits,
-                    retrieval_source=retrieval_source,
-                    retrieval_sources=self._retrieval_sources(context),
-                    retrieval_titles=self._retrieval_titles(context),
-                    retrieval_scores=self._retrieval_scores(context),
+                    retrieval_source=decision.source,
+                    retrieval_confidence=decision.confidence.value,
+                    retrieval_sources=self._retrieval_sources(decision.candidates),
+                    retrieval_titles=self._retrieval_titles(decision.candidates),
+                    retrieval_scores=self._retrieval_scores(decision.candidates),
                 )
             except ModelExecutionError:
                 fallback_draft, fallback_mode = self._recover_richer_answer(question, context)
@@ -162,45 +207,81 @@ class OracleService:
                         packets=self._format_packets(fallback_draft),
                         mode=fallback_mode,
                         retrieval_hits=retrieval_hits,
-                        retrieval_source=retrieval_source,
-                        retrieval_sources=self._retrieval_sources(context),
-                        retrieval_titles=self._retrieval_titles(context),
-                        retrieval_scores=self._retrieval_scores(context),
+                        retrieval_source=decision.source,
+                        retrieval_confidence=decision.confidence.value,
+                        retrieval_sources=self._retrieval_sources(decision.candidates),
+                        retrieval_titles=self._retrieval_titles(decision.candidates),
+                        retrieval_scores=self._retrieval_scores(decision.candidates),
                     )
             except ModelUnavailableError:
                 pass
 
-        try:
-            fallback_draft = self.fallback_llm.generate(prompt)
-        except Exception:
-            return self._single_packet(
-                ARCHIVE_UNAVAILABLE,
-                mode=ReplyMode.ARCHIVE_UNAVAILABLE,
-                retrieval_hits=retrieval_hits,
-                retrieval_source=retrieval_source,
-                context=context,
-            )
+        fallback_draft = self._deterministic_context_draft(context)
+        if fallback_draft is None:
+            try:
+                fallback_draft = self.fallback_llm.generate(prompt)
+            except Exception:
+                return self._single_packet(
+                    ARCHIVE_UNAVAILABLE,
+                    mode=ReplyMode.ARCHIVE_UNAVAILABLE,
+                    retrieval_hits=retrieval_hits,
+                    retrieval_source=decision.source,
+                    retrieval_confidence=decision.confidence.value,
+                    retrieval_chunks=decision.candidates,
+                )
 
         if fallback_draft.short_answer == NO_GROUNDED_ANSWER:
             return self._single_packet(
                 NO_GROUNDED_ANSWER,
                 mode=ReplyMode.NO_GROUNDED_ANSWER,
-                retrieval_hits=retrieval_hits,
-                retrieval_source="none",
+                retrieval_confidence=decision.confidence.value,
+                retrieval_chunks=decision.candidates,
             )
 
         return OracleReply(
             packets=self._format_packets(fallback_draft),
             mode=ReplyMode.DETERMINISTIC_FALLBACK,
             retrieval_hits=retrieval_hits,
-            retrieval_source=retrieval_source,
-            retrieval_sources=self._retrieval_sources(context),
-            retrieval_titles=self._retrieval_titles(context),
-            retrieval_scores=self._retrieval_scores(context),
+            retrieval_source=decision.source,
+            retrieval_confidence=decision.confidence.value,
+            retrieval_sources=self._retrieval_sources(decision.candidates),
+            retrieval_titles=self._retrieval_titles(decision.candidates),
+            retrieval_scores=self._retrieval_scores(decision.candidates),
         )
 
-    def _best_score(self, context: list[RetrievalChunk]) -> int:
-        return max((chunk.matched_terms for chunk in context), default=0)
+    def _assess_retriever(
+        self,
+        question: str,
+        retriever: Retriever | None,
+    ) -> RetrievalAssessment:
+        if retriever is None:
+            return RetrievalAssessment(
+                anchor_terms=(),
+                confidence=RetrievalConfidence.WEAK,
+                selected_chunk=None,
+                context=(),
+                candidates=(),
+            )
+
+        candidates = retriever.search(
+            question,
+            limit=max(self.retrieval_limit * 6, 12),
+        )
+        context_expander = getattr(retriever, "expand_source_context", None)
+        return assess_retrieval(
+            question,
+            candidates,
+            context_limit=self.retrieval_limit,
+            context_expander=context_expander,
+        )
+
+    def _assessment_rank(self, assessment: RetrievalAssessment) -> tuple[int, int, int]:
+        confidence_rank = {
+            RetrievalConfidence.WEAK: 0,
+            RetrievalConfidence.MEDIUM: 1,
+            RetrievalConfidence.STRONG: 2,
+        }[assessment.confidence]
+        return (confidence_rank, assessment.best_score, assessment.best_title_overlap)
 
     def _format_packets(self, draft: AnswerDraft) -> tuple[str, ...]:
         return format_answer_packets(
@@ -311,14 +392,14 @@ class OracleService:
 
         return AnswerDraft(short_answer=short_answer, extended_answer=long_answer)
 
-    def _retrieval_sources(self, context: list[RetrievalChunk]) -> tuple[str, ...]:
-        return tuple(chunk.source for chunk in context[: self.retrieval_limit])
+    def _retrieval_sources(self, chunks: tuple[RetrievalChunk, ...]) -> tuple[str, ...]:
+        return tuple(chunk.source for chunk in chunks[: self.retrieval_limit])
 
-    def _retrieval_titles(self, context: list[RetrievalChunk]) -> tuple[str, ...]:
-        return tuple(chunk.title for chunk in context[: self.retrieval_limit])
+    def _retrieval_titles(self, chunks: tuple[RetrievalChunk, ...]) -> tuple[str, ...]:
+        return tuple(chunk.title for chunk in chunks[: self.retrieval_limit])
 
-    def _retrieval_scores(self, context: list[RetrievalChunk]) -> tuple[int, ...]:
-        return tuple(chunk.matched_terms for chunk in context[: self.retrieval_limit])
+    def _retrieval_scores(self, chunks: tuple[RetrievalChunk, ...]) -> tuple[int, ...]:
+        return tuple(chunk.matched_terms for chunk in chunks[: self.retrieval_limit])
 
     def _single_packet(
         self,
@@ -327,15 +408,16 @@ class OracleService:
         mode: ReplyMode,
         retrieval_hits: int = 0,
         retrieval_source: str = "none",
-        context: list[RetrievalChunk] | None = None,
+        retrieval_confidence: str = RetrievalConfidence.WEAK.value,
+        retrieval_chunks: tuple[RetrievalChunk, ...] = (),
     ) -> OracleReply:
-        context = context or []
         return OracleReply(
             packets=(text,),
             mode=mode,
             retrieval_hits=retrieval_hits,
             retrieval_source=retrieval_source,
-            retrieval_sources=self._retrieval_sources(context),
-            retrieval_titles=self._retrieval_titles(context),
-            retrieval_scores=self._retrieval_scores(context),
+            retrieval_confidence=retrieval_confidence,
+            retrieval_sources=self._retrieval_sources(retrieval_chunks),
+            retrieval_titles=self._retrieval_titles(retrieval_chunks),
+            retrieval_scores=self._retrieval_scores(retrieval_chunks),
         )

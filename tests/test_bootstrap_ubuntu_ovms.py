@@ -166,9 +166,15 @@ def test_render_runtime_artifacts_writes_local_configs_state_and_helpers(tmp_pat
     state = load_state(tmp_path)
 
     assert sim_config.radio.transport == "simulated"
+    assert sim_config.radio.text_packet_spacing_seconds == 0.0
+    assert sim_config.radio.max_text_payload_bytes == 0
     assert sim_config.knowledge.runtime_zim_fallback_enabled is True
     assert sim_config.knowledge.runtime_zim_allowlist == (DEFAULT_ZIM_ALIAS,)
     assert live_config.radio.device == "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
+    assert live_config.radio.text_packet_spacing_seconds == 8.0
+    assert live_config.radio.max_text_payload_bytes == 120
+    assert live_config.reply.short_max_chars == 100
+    assert live_config.reply.continuation_max_chars == 120
     assert live_config.knowledge.runtime_zim_fallback_enabled is True
     assert live_config.knowledge.runtime_zim_allowlist == (DEFAULT_ZIM_ALIAS,)
     assert state is not None

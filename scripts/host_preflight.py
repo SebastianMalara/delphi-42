@@ -29,6 +29,9 @@ PROVIDER_EXPECTED_BASE_PATH = {
     "lm-studio": "/v1",
     "ovms": "/v3",
 }
+MESHTASTIC_SHORT_MAX_CHARS = 100
+MESHTASTIC_CONTINUATION_MAX_CHARS = 120
+MESHTASTIC_MAX_CONTINUATION_PACKETS = 3
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,7 @@ def run_preflight(
         _check_index(config.knowledge.index_path),
         _check_runtime_zim_files(config),
         _check_serial_devices(config, glob_fn),
+        _check_mesh_packet_settings(config),
     ]
     return config, results
 
@@ -230,6 +234,44 @@ def _check_serial_devices(
         "serial-devices",
         False,
         f"configured device missing: {device}; visible devices: {details}",
+    )
+
+
+def _check_mesh_packet_settings(config: OracleRuntimeConfig) -> CheckResult:
+    if config.radio.transport != "meshtastic":
+        return CheckResult("mesh-packets", True, "simulated transport; packet pacing not enforced")
+
+    if config.radio.max_text_payload_bytes <= 0:
+        return CheckResult(
+            "mesh-packets",
+            False,
+            "radio.max_text_payload_bytes must be greater than 0 for meshtastic transport",
+        )
+
+    if (
+        config.reply.short_max_chars > MESHTASTIC_SHORT_MAX_CHARS
+        or config.reply.continuation_max_chars > MESHTASTIC_CONTINUATION_MAX_CHARS
+        or config.reply.max_continuation_packets > MESHTASTIC_MAX_CONTINUATION_PACKETS
+    ):
+        return CheckResult(
+            "mesh-packets",
+            False,
+            (
+                "reply contract exceeds live Meshtastic profile envelope: "
+                f"short<={MESHTASTIC_SHORT_MAX_CHARS}, "
+                f"continuation<={MESHTASTIC_CONTINUATION_MAX_CHARS}, "
+                f"max_packets<={MESHTASTIC_MAX_CONTINUATION_PACKETS}"
+            ),
+        )
+
+    return CheckResult(
+        "mesh-packets",
+        True,
+        (
+            f"payload<={config.radio.max_text_payload_bytes}B "
+            f"spacing={config.radio.text_packet_spacing_seconds}s "
+            f"retries={config.radio.text_packet_retry_attempts}"
+        ),
     )
 
 

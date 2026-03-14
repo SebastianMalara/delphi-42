@@ -38,6 +38,7 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 | `python -m bot.dev_console` | Start the simulated-radio development console |
 | `python -m scripts.host_preflight --config ...` | Validate host-native OpenAI-compatible runtime, `.zim`, and Meshtastic environment |
 | `python -m scripts.mac_preflight --config ...` | Compatibility wrapper for the Mac-native LM Studio lane |
+| `python -m scripts.inspect_retrieval --config ... --question ...` | Inspect anchor terms, retrieval confidence, selected source, and answer policy for one question |
 | `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...` | Export curated `.zim` content into staged plaintext |
 | `python -m ingest.build_index --input-dir ... --db ...` | Build or rebuild the SQLite FTS index |
 
@@ -48,7 +49,7 @@ Current config keys from `config/oracle.example.yaml`:
 | Section | Key | Meaning |
 | --- | --- | --- |
 | top level | `node_name` | Human-readable node name |
-| `radio` | `transport`, `device`, `channel` | Radio transport, device path, and channel |
+| `radio` | `transport`, `device`, `channel`, `text_packet_spacing_seconds`, `text_packet_retry_attempts`, `text_packet_retry_delay_seconds`, `max_text_payload_bytes` | Radio transport, device path, pacing, retry policy, and safe text payload ceiling |
 | `privacy` | `answer_public_messages`, `share_position_publicly` | Safety flags that should stay `false` in Prototype v1 |
 | `broadcasts` | `interval_minutes`, `messages` | Public discovery behavior |
 | `knowledge` | `plaintext_dir`, `index_path`, `kiwix_url`, `zim_dir`, `runtime_zim_fallback_enabled`, `runtime_zim_allowlist`, `runtime_zim_search_limit` | Corpus, index, browse-archive locations, and bounded runtime `.zim` fallback policy |
@@ -106,6 +107,7 @@ Current implementation note:
 - `ingest` writes the index that `core` later reads.
 - Kiwix serves the larger archive independently from the answer-time index.
 - Allowlisted `.zim` files can be searched directly as a secondary retrieval source when the indexed corpus misses.
+- Meshtastic text answers are paced and retried in application logic, and live profiles enforce a radio-safe payload envelope.
 - `bot` exposes the user-facing command interface through Meshtastic.
 
 ## Failure Modes

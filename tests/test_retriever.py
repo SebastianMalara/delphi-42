@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from core.retriever import SQLiteRetriever
+from core.retriever import RetrievalChunk, RetrievalConfidence, SQLiteRetriever, assess_retrieval
 from ingest.build_index import SQLiteIndexBuilder, build_chunks
 from ingest.zim_extract import ExtractedDocument
 
@@ -75,3 +75,26 @@ def test_sqlite_retriever_uses_exact_token_overlap_not_substrings(tmp_path: Path
 
     assert len(results) == 1
     assert results[0].source == "arm.txt"
+
+
+def test_assess_retrieval_rejects_ambiguous_wound_query() -> None:
+    chunks = [
+        RetrievalChunk(
+            title="Negative-pressure wound therapy",
+            snippet="Negative-pressure wound therapy may support wound closure in supervised settings.",
+            source="npwt.txt",
+        ),
+        RetrievalChunk(
+            title="Compartment syndrome",
+            snippet="Compartment syndrome requires urgent evaluation and pressure relief.",
+            source="compartment.txt",
+        ),
+    ]
+
+    assessment = assess_retrieval(
+        "how to treat a wound it's not closing, I'm alone in the woods",
+        chunks,
+    )
+
+    assert assessment.confidence is RetrievalConfidence.WEAK
+    assert assessment.context == ()

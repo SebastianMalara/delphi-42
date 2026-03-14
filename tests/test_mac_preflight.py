@@ -497,3 +497,88 @@ llm:
     assert serial_check.ok is False
     assert configured_device in serial_check.details
     assert by_id_path in serial_check.details
+
+
+def test_run_preflight_flags_unsafe_meshtastic_reply_contract(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.live.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: meshtastic
+  device: /dev/ttyACM0
+  max_text_payload_bytes: 120
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+reply:
+  short_max_chars: 120
+  continuation_max_chars: 600
+  max_continuation_packets: 3
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: ["/dev/ttyACM0"] if pattern == "/dev/ttyACM*" else [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    packet_check = next(result for result in results if result.name == "mesh-packets")
+    assert packet_check.ok is False
+    assert "reply contract exceeds" in packet_check.details
+
+
+def test_run_preflight_accepts_safe_meshtastic_packet_settings(tmp_path: Path) -> None:
+    index_path = tmp_path / "data/index/oracle-ovms.db"
+    _build_index(index_path)
+
+    config_path = tmp_path / "oracle.ubuntu.ovms.live.yaml"
+    config_path.write_text(
+        f"""
+radio:
+  transport: meshtastic
+  device: /dev/ttyACM0
+  max_text_payload_bytes: 120
+knowledge:
+  plaintext_dir: data/library/plaintext
+  index_path: {index_path}
+  zim_dir: data/library/zim
+  runtime_zim_fallback_enabled: false
+llm:
+  backend: openai-compatible
+  provider: ovms
+  base_url: http://127.0.0.1:8000/v3
+  model: ovms-qwen
+  api_key: sk-
+reply:
+  short_max_chars: 100
+  continuation_max_chars: 120
+  max_continuation_packets: 3
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _, results = run_preflight(
+        config_path,
+        import_module_fn=_import_ok,
+        urlopen_fn=lambda req, timeout=0: FakeHTTPResponse({"data": [{"id": "ovms-qwen"}]}),
+        glob_fn=lambda pattern: ["/dev/ttyACM0"] if pattern == "/dev/ttyACM*" else [],
+        runner_factory=lambda **kwargs: FakeRunner(**kwargs),
+    )
+
+    packet_check = next(result for result in results if result.name == "mesh-packets")
+    assert packet_check.ok is True

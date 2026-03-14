@@ -25,6 +25,10 @@ knowledge:
     assert config.node_name == "test-node"
     assert config.radio.transport == "meshtastic"
     assert config.radio.device == "/dev/ttyUSB1"
+    assert config.radio.text_packet_spacing_seconds == 8.0
+    assert config.radio.text_packet_retry_attempts == 2
+    assert config.radio.text_packet_retry_delay_seconds == 15.0
+    assert config.radio.max_text_payload_bytes == 120
     assert config.privacy.answer_public_messages is False
     assert config.llm.backend == "openai-compatible"
     assert config.llm.provider == "generic"
@@ -178,9 +182,15 @@ def test_repo_ubuntu_ovms_config_profiles_load() -> None:
     assert sim_config.radio.transport == "simulated"
     assert sim_config.llm.provider == "ovms"
     assert sim_config.llm.base_url == "http://127.0.0.1:8000/v3"
+    assert sim_config.radio.text_packet_spacing_seconds == 0.0
+    assert sim_config.radio.max_text_payload_bytes == 0
     assert sim_config.knowledge.runtime_zim_fallback_enabled is True
     assert live_config.radio.transport == "meshtastic"
     assert live_config.radio.device.startswith("/dev/ttyACM")
+    assert live_config.radio.text_packet_spacing_seconds == 8.0
+    assert live_config.radio.max_text_payload_bytes == 120
+    assert live_config.reply.short_max_chars == 100
+    assert live_config.reply.continuation_max_chars == 120
     assert live_config.knowledge.runtime_zim_fallback_enabled is True
 
 
@@ -195,6 +205,20 @@ reply:
     )
 
     with pytest.raises(ConfigError, match="reply.short_max_chars"):
+        load_runtime_config(config_path, root_dir=tmp_path)
+
+
+def test_load_runtime_config_rejects_negative_radio_packet_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "oracle.yaml"
+    config_path.write_text(
+        """
+radio:
+  text_packet_spacing_seconds: -1
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="radio.text_packet_spacing_seconds"):
         load_runtime_config(config_path, root_dir=tmp_path)
 
 

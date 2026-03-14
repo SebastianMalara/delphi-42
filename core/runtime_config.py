@@ -37,6 +37,10 @@ class RadioConfig:
     transport: str = "meshtastic"
     device: str = "/dev/ttyUSB0"
     channel: int = 0
+    text_packet_spacing_seconds: float = 8.0
+    text_packet_retry_attempts: int = 2
+    text_packet_retry_delay_seconds: float = 15.0
+    max_text_payload_bytes: int = 120
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,7 @@ class OracleRuntimeConfig:
             f"radio_transport={self.radio.transport} "
             f"radio_device={self.radio.device or '-'} "
             f"channel={self.radio.channel} "
+            f"radio_payload_bytes={self.radio.max_text_payload_bytes} "
             f"index={self.knowledge.index_path} "
             f"llm_backend={self.llm.backend} "
             f"llm_provider={self.llm.provider} "
@@ -148,6 +153,18 @@ def load_runtime_config(
             ).strip(),
             device=str(raw_data.get("radio", {}).get("device", "/dev/ttyUSB0")).strip(),
             channel=int(raw_data.get("radio", {}).get("channel", 0)),
+            text_packet_spacing_seconds=float(
+                raw_data.get("radio", {}).get("text_packet_spacing_seconds", 8.0)
+            ),
+            text_packet_retry_attempts=int(
+                raw_data.get("radio", {}).get("text_packet_retry_attempts", 2)
+            ),
+            text_packet_retry_delay_seconds=float(
+                raw_data.get("radio", {}).get("text_packet_retry_delay_seconds", 15.0)
+            ),
+            max_text_payload_bytes=int(
+                raw_data.get("radio", {}).get("max_text_payload_bytes", 120)
+            ),
         ),
         privacy=PrivacyConfig(
             answer_public_messages=bool(
@@ -277,6 +294,14 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
         raise ConfigError("radio.device must not be empty when radio.transport is meshtastic.")
     if config.radio.channel < 0:
         raise ConfigError("radio.channel must be 0 or greater.")
+    if config.radio.text_packet_spacing_seconds < 0:
+        raise ConfigError("radio.text_packet_spacing_seconds must be 0 or greater.")
+    if config.radio.text_packet_retry_attempts < 0:
+        raise ConfigError("radio.text_packet_retry_attempts must be 0 or greater.")
+    if config.radio.text_packet_retry_delay_seconds < 0:
+        raise ConfigError("radio.text_packet_retry_delay_seconds must be 0 or greater.")
+    if config.radio.max_text_payload_bytes < 0:
+        raise ConfigError("radio.max_text_payload_bytes must be 0 or greater.")
     if config.broadcasts.interval_minutes <= 0:
         raise ConfigError("broadcasts.interval_minutes must be greater than 0.")
     if config.privacy.answer_public_messages:

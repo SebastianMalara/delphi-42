@@ -362,6 +362,13 @@ def _config_text(
     zim_dir: Path,
     zim_alias: str,
 ) -> str:
+    is_live_radio = radio_transport == "meshtastic"
+    radio_spacing = 8.0 if is_live_radio else 0.0
+    radio_retries = 2 if is_live_radio else 0
+    radio_retry_delay = 15.0 if is_live_radio else 0.0
+    radio_payload_bytes = 120 if is_live_radio else 0
+    short_max_chars = 100 if is_live_radio else 120
+    continuation_max_chars = 120 if is_live_radio else 600
     return textwrap.dedent(
         f"""\
         node_name: {node_name}
@@ -370,6 +377,10 @@ def _config_text(
           transport: {radio_transport}
           device: {_yaml_string(radio_device)}
           channel: 0
+          text_packet_spacing_seconds: {radio_spacing}
+          text_packet_retry_attempts: {radio_retries}
+          text_packet_retry_delay_seconds: {radio_retry_delay}
+          max_text_payload_bytes: {radio_payload_bytes}
 
         privacy:
           answer_public_messages: false
@@ -401,8 +412,8 @@ def _config_text(
           timeout_seconds: 45
 
         reply:
-          short_max_chars: 120
-          continuation_max_chars: 600
+          short_max_chars: {short_max_chars}
+          continuation_max_chars: {continuation_max_chars}
           max_continuation_packets: 3
 
         wifi:

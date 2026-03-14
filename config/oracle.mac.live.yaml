@@ -6,6 +6,10 @@ radio:
   # /dev/cu.usbmodem1101
   device: /dev/cu.usbmodemREPLACE_ME
   channel: 0
+  text_packet_spacing_seconds: 8.0
+  text_packet_retry_attempts: 2
+  text_packet_retry_delay_seconds: 15.0
+  max_text_payload_bytes: 120
 
 privacy:
   answer_public_messages: false
@@ -38,8 +42,8 @@ llm:
   timeout_seconds: 45
 
 reply:
-  short_max_chars: 120
-  continuation_max_chars: 600
+  short_max_chars: 100
+  continuation_max_chars: 120
   max_continuation_packets: 3
 
 wifi:
