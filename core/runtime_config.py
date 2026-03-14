@@ -15,6 +15,16 @@ DEFAULT_BROADCAST_MESSAGES = (
 OPENAI_COMPATIBLE_BACKEND = "openai-compatible"
 LEGACY_OPENAI_BACKEND = "axcl-openai"
 SUPPORTED_LLM_BACKENDS = {OPENAI_COMPATIBLE_BACKEND, LEGACY_OPENAI_BACKEND, "deterministic"}
+GENERIC_OPENAI_PROVIDER = "generic"
+STACKFLOW_PROVIDER = "stackflow"
+LM_STUDIO_PROVIDER = "lm-studio"
+OVMS_PROVIDER = "ovms"
+SUPPORTED_LLM_PROVIDERS = {
+    GENERIC_OPENAI_PROVIDER,
+    STACKFLOW_PROVIDER,
+    LM_STUDIO_PROVIDER,
+    OVMS_PROVIDER,
+}
 SUPPORTED_RADIO_TRANSPORTS = {"meshtastic", "simulated"}
 
 
@@ -27,6 +37,10 @@ class RadioConfig:
     transport: str = "meshtastic"
     device: str = "/dev/ttyUSB0"
     channel: int = 0
+    text_packet_spacing_seconds: float = 8.0
+    text_packet_retry_attempts: int = 2
+    text_packet_retry_delay_seconds: float = 15.0
+    max_text_payload_bytes: int = 120
 
 
 @dataclass(frozen=True)
@@ -55,6 +69,7 @@ class KnowledgeConfig:
 @dataclass(frozen=True)
 class LLMConfig:
     backend: str = OPENAI_COMPATIBLE_BACKEND
+    provider: str = GENERIC_OPENAI_PROVIDER
     base_url: str = "http://127.0.0.1:8000/v1"
     model: str = "qwen3-1.7B-Int8-ctx-axcl"
     api_key: str = "sk-"
@@ -91,8 +106,10 @@ class OracleRuntimeConfig:
             f"radio_transport={self.radio.transport} "
             f"radio_device={self.radio.device or '-'} "
             f"channel={self.radio.channel} "
+            f"radio_payload_bytes={self.radio.max_text_payload_bytes} "
             f"index={self.knowledge.index_path} "
             f"llm_backend={self.llm.backend} "
+            f"llm_provider={self.llm.provider} "
             f"llm_model={self.llm.model} "
             f"zim_fallback={self.knowledge.runtime_zim_fallback_enabled} "
             f"reply_short_max={self.reply.short_max_chars}"
@@ -136,6 +153,18 @@ def load_runtime_config(
             ).strip(),
             device=str(raw_data.get("radio", {}).get("device", "/dev/ttyUSB0")).strip(),
             channel=int(raw_data.get("radio", {}).get("channel", 0)),
+            text_packet_spacing_seconds=float(
+                raw_data.get("radio", {}).get("text_packet_spacing_seconds", 8.0)
+            ),
+            text_packet_retry_attempts=int(
+                raw_data.get("radio", {}).get("text_packet_retry_attempts", 2)
+            ),
+            text_packet_retry_delay_seconds=float(
+                raw_data.get("radio", {}).get("text_packet_retry_delay_seconds", 15.0)
+            ),
+            max_text_payload_bytes=int(
+                raw_data.get("radio", {}).get("max_text_payload_bytes", 120)
+            ),
         ),
         privacy=PrivacyConfig(
             answer_public_messages=bool(
@@ -189,6 +218,9 @@ def load_runtime_config(
                     )
                 ).strip()
             ),
+            provider=str(
+                raw_data.get("llm", {}).get("provider", GENERIC_OPENAI_PROVIDER)
+            ).strip(),
             base_url=str(
                 raw_data.get("llm", {}).get("base_url", "http://127.0.0.1:8000/v1")
             ).strip(),
@@ -262,6 +294,14 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
         raise ConfigError("radio.device must not be empty when radio.transport is meshtastic.")
     if config.radio.channel < 0:
         raise ConfigError("radio.channel must be 0 or greater.")
+    if config.radio.text_packet_spacing_seconds < 0:
+        raise ConfigError("radio.text_packet_spacing_seconds must be 0 or greater.")
+    if config.radio.text_packet_retry_attempts < 0:
+        raise ConfigError("radio.text_packet_retry_attempts must be 0 or greater.")
+    if config.radio.text_packet_retry_delay_seconds < 0:
+        raise ConfigError("radio.text_packet_retry_delay_seconds must be 0 or greater.")
+    if config.radio.max_text_payload_bytes < 0:
+        raise ConfigError("radio.max_text_payload_bytes must be 0 or greater.")
     if config.broadcasts.interval_minutes <= 0:
         raise ConfigError("broadcasts.interval_minutes must be greater than 0.")
     if config.privacy.answer_public_messages:
@@ -272,6 +312,11 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
         raise ConfigError(
             f"Unsupported llm.backend '{config.llm.backend}'. "
             f"Supported values: {sorted(SUPPORTED_LLM_BACKENDS)}"
+        )
+    if config.llm.provider not in SUPPORTED_LLM_PROVIDERS:
+        raise ConfigError(
+            f"Unsupported llm.provider '{config.llm.provider}'. "
+            f"Supported values: {sorted(SUPPORTED_LLM_PROVIDERS)}"
         )
     if config.llm.backend == OPENAI_COMPATIBLE_BACKEND:
         if not config.llm.base_url:

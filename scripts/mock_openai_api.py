@@ -7,41 +7,70 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_MODEL = os.environ.get("MOCK_OPENAI_MODEL", "qwen3-1.7B-Int8-ctx-axcl")
 DEFAULT_PORT = int(os.environ.get("MOCK_OPENAI_PORT", "8000"))
+API_PREFIX = os.environ.get("MOCK_OPENAI_API_PREFIX", "/v1")
 
 
 class MockOpenAIHandler(BaseHTTPRequestHandler):
     server_version = "Delphi42MockOpenAI/0.1"
 
     def do_GET(self) -> None:
-        if self.path == "/v1/models":
-            self._write_json(
-                200,
-                {
-                    "object": "list",
-                    "data": [
-                        {
-                            "id": DEFAULT_MODEL,
-                            "object": "model",
-                            "owned_by": "delphi-42-mock",
-                        }
-                    ],
-                },
-            )
-            return
-        self._write_json(404, {"error": {"message": "not found"}})
+        status, payload = _route_request("GET", self.path)
+        self._write_json(status, payload)
 
     def do_POST(self) -> None:
-        if self.path != "/v1/chat/completions":
-            self._write_json(404, {"error": {"message": "not found"}})
-            return
-
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8") if length else "{}"
         payload = json.loads(body or "{}")
+        status, response_payload = _route_request("POST", self.path, payload)
+        self._write_json(status, response_payload)
+
+    def log_message(self, format: str, *args) -> None:
+        return None
+
+    def _write_json(self, status: int, payload: dict) -> None:
+        raw = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+def _normalize_api_prefix(raw_prefix: str) -> str:
+    prefix = raw_prefix.strip() or "/v1"
+    if not prefix.startswith("/"):
+        prefix = "/" + prefix
+    return prefix.rstrip("/") or "/v1"
+
+
+def _api_path(suffix: str) -> str:
+    normalized_prefix = _normalize_api_prefix(API_PREFIX)
+    normalized_suffix = suffix if suffix.startswith("/") else f"/{suffix}"
+    return f"{normalized_prefix}{normalized_suffix}"
+
+
+def _route_request(method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    if method == "GET" and path == _api_path("/models"):
+        return (
+            200,
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "id": DEFAULT_MODEL,
+                        "object": "model",
+                        "owned_by": "delphi-42-mock",
+                    }
+                ],
+            },
+        )
+
+    if method == "POST" and path == _api_path("/chat/completions"):
+        payload = payload or {}
         prompt = _last_user_message(payload.get("messages", []))
         short_answer, long_answer = _draft_from_prompt(prompt)
         content = f"SHORT: {short_answer}\nLONG:\n{long_answer}"
-        self._write_json(
+        return (
             200,
             {
                 "id": "chatcmpl-delphi42-mock",
@@ -60,16 +89,7 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
             },
         )
 
-    def log_message(self, format: str, *args) -> None:
-        return None
-
-    def _write_json(self, status: int, payload: dict) -> None:
-        raw = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
+    return 404, {"error": {"message": "not found"}}
 
 
 def _last_user_message(messages: list[dict]) -> str:

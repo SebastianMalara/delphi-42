@@ -33,10 +33,11 @@ Prototype v1 now prefers container packaging for the portable runtime:
    - `llm.model`
    - hotspot SSID
 6. Stage the initial retrieval corpus under the configured plaintext directory and the curated Kiwix ZIM set under the configured ZIM directory.
+   - If you use a versioned medicine archive download, copy or symlink it into the configured ZIM directory as `medicine.zim` before extraction so it matches the allowlist examples below.
 7. If the answer corpus includes `.zim` sources, export them into staged plaintext:
 
 ```bash
-python -m ingest.extract_zim --zim-dir /opt/delphi-42/data/library/zim --output-dir /opt/delphi-42/data/library/plaintext --allowlist wikipedia_en_medicine_maxi_2023-12.zim
+python -m ingest.extract_zim --zim-dir /opt/delphi-42/data/library/zim --output-dir /opt/delphi-42/data/library/plaintext --allowlist medicine.zim
 ```
 
 8. Build the initial index:

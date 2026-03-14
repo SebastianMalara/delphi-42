@@ -39,6 +39,10 @@ class OracleBot:
         radio_factory: Callable[[], RadioClient] | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
         reconnect_backoff_seconds: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0, 30.0),
+        text_packet_spacing_seconds: float = 0.0,
+        text_packet_retry_attempts: int = 0,
+        text_packet_retry_delay_seconds: float = 0.0,
+        max_text_payload_bytes: int = 0,
     ) -> None:
         self.radio = radio
         self.router = router
@@ -46,6 +50,10 @@ class OracleBot:
         self.radio_factory = radio_factory or (lambda: radio)
         self.sleep_fn = sleep_fn
         self.reconnect_backoff_seconds = reconnect_backoff_seconds
+        self.text_packet_spacing_seconds = text_packet_spacing_seconds
+        self.text_packet_retry_attempts = text_packet_retry_attempts
+        self.text_packet_retry_delay_seconds = text_packet_retry_delay_seconds
+        self.max_text_payload_bytes = max_text_payload_bytes
 
     def process_inbox(self) -> list[str]:
         delivery_log: list[str] = []
@@ -78,15 +86,83 @@ class OracleBot:
 
     def _deliver(self, routed: RoutedReply) -> list[str]:
         events: list[str] = []
+        packet_total = len(routed.reply.packets)
+        packet_index = 0
         for response in routed.messages:
-            outbound, delivery_kind = self._send_response(response)
-            event = (
-                f"to={outbound.destination} channel={outbound.channel} "
-                f"kind={delivery_kind} mode={routed.reply.mode.value} "
-                f"hits={routed.reply.retrieval_hits}"
-            )
-            self.logger.info(event)
-            events.append(event)
+            if response.send_position:
+                outbound, delivery_kind = self._send_response(response)
+                event = self._delivery_event(
+                    outbound=outbound,
+                    delivery_kind=delivery_kind,
+                    routed=routed,
+                )
+                self.logger.info(event)
+                events.append(event)
+                continue
+
+            packet_index += 1
+            if packet_index > 1 and self.text_packet_spacing_seconds > 0:
+                self.sleep_fn(self.text_packet_spacing_seconds)
+
+            outbound = self._trim_text_response(response)
+            packet_bytes = len(outbound.text.encode("utf-8"))
+            delivered = False
+            max_attempts = self.text_packet_retry_attempts + 1
+
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    sent, delivery_kind = self._send_response(outbound)
+                except RadioTransportError as exc:
+                    self.logger.warning(
+                        "packet send failed destination=%s packet=%s/%s attempt=%s: %s",
+                        outbound.destination,
+                        packet_index,
+                        packet_total,
+                        attempt,
+                        exc,
+                    )
+                    if attempt >= max_attempts:
+                        status = (
+                            "delivery_failed" if packet_index == 1 else "delivery_incomplete"
+                        )
+                        summary = (
+                            f"to={outbound.destination} channel={outbound.channel} "
+                            f"status={status} mode={routed.reply.mode.value} "
+                            f"packet_index={packet_index} packet_total={packet_total} "
+                            f"packet_count={packet_total}"
+                        )
+                        self.logger.warning(summary)
+                        events.append(summary)
+                        return events
+                    self._recover_radio()
+                    if self.text_packet_retry_delay_seconds > 0:
+                        self.sleep_fn(self.text_packet_retry_delay_seconds)
+                    continue
+
+                event = self._delivery_event(
+                    outbound=sent,
+                    delivery_kind=delivery_kind,
+                    routed=routed,
+                    packet_index=packet_index,
+                    packet_total=packet_total,
+                    packet_bytes=packet_bytes,
+                    send_attempt=attempt,
+                )
+                self.logger.info(event)
+                events.append(event)
+                delivered = True
+                break
+
+            if not delivered:
+                return events
+
+        summary = (
+            f"to={routed.inbound.sender_id} channel={routed.inbound.channel} "
+            f"status=delivery_complete mode={routed.reply.mode.value} "
+            f"packet_count={packet_total}"
+        )
+        self.logger.info(summary)
+        events.append(summary)
         return events
 
     def _send_response(self, response: OutboundMessage) -> tuple[OutboundMessage, str]:
@@ -106,6 +182,50 @@ class OracleBot:
             self.logger.warning("position unavailable for %s: %s", response.destination, exc)
             self.radio.send_text(fallback)
             return fallback, "text"
+
+    def _trim_text_response(self, response: OutboundMessage) -> OutboundMessage:
+        if response.send_position or self.max_text_payload_bytes <= 0:
+            return response
+
+        return OutboundMessage(
+            destination=response.destination,
+            text=_trim_to_utf8_bytes(response.text, self.max_text_payload_bytes),
+            channel=response.channel,
+            send_position=False,
+        )
+
+    def _delivery_event(
+        self,
+        *,
+        outbound: OutboundMessage,
+        delivery_kind: str,
+        routed: RoutedReply,
+        packet_index: int | None = None,
+        packet_total: int | None = None,
+        packet_bytes: int | None = None,
+        send_attempt: int | None = None,
+    ) -> str:
+        parts = [
+            f"to={outbound.destination}",
+            f"channel={outbound.channel}",
+            f"kind={delivery_kind}",
+            f"mode={routed.reply.mode.value}",
+            f"hits={routed.reply.retrieval_hits}",
+            f"retrieval={routed.reply.retrieval_source}",
+            f"confidence={routed.reply.retrieval_confidence}",
+            f"packet_count={len(routed.reply.packets)}",
+            f"sources={','.join(routed.reply.retrieval_sources) or '-'}",
+            f"titles={','.join(routed.reply.retrieval_titles) or '-'}",
+            f"scores={','.join(str(score) for score in routed.reply.retrieval_scores) or '-'}",
+        ]
+        if packet_index is not None and packet_total is not None:
+            parts.append(f"packet_index={packet_index}")
+            parts.append(f"packet_total={packet_total}")
+        if packet_bytes is not None:
+            parts.append(f"packet_bytes={packet_bytes}")
+        if send_attempt is not None:
+            parts.append(f"send_attempt={send_attempt}")
+        return " ".join(parts)
 
     def _recover_radio(self) -> None:
         self._safe_close_radio()
@@ -159,6 +279,10 @@ def build_oracle_bot(
         router=router,
         logger=logger,
         radio_factory=radio_factory,
+        text_packet_spacing_seconds=config.radio.text_packet_spacing_seconds,
+        text_packet_retry_attempts=config.radio.text_packet_retry_attempts,
+        text_packet_retry_delay_seconds=config.radio.text_packet_retry_delay_seconds,
+        max_text_payload_bytes=config.radio.max_text_payload_bytes,
     )
 
 
@@ -245,6 +369,20 @@ def _build_zim_retriever(
         ",".join(config.knowledge.runtime_zim_allowlist),
     )
     return retriever
+
+
+def _trim_to_utf8_bytes(text: str, max_bytes: int) -> str:
+    encoded = text.encode("utf-8")
+    if max_bytes <= 0 or len(encoded) <= max_bytes:
+        return text
+
+    ellipsis = "..."
+    budget = max(max_bytes - len(ellipsis.encode("utf-8")), 0)
+    trimmed = text
+    while trimmed and len(trimmed.encode("utf-8")) > budget:
+        trimmed = trimmed[:-1]
+    trimmed = trimmed.rstrip(" .,;:")
+    return f"{trimmed or text[:1]}{ellipsis}"
 
 
 def main() -> None:

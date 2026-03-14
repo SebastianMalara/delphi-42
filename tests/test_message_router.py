@@ -53,7 +53,7 @@ def test_message_router_routes_grounded_ask_reply() -> None:
     routed = router.route(
         IncomingMessage(
             sender_id="node-1",
-            text="safe camp placement",
+            text="best place to pitch camp above the flood line",
             is_direct_message=True,
         )
     )

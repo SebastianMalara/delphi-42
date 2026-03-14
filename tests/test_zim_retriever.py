@@ -49,32 +49,33 @@ def test_runtime_zim_retriever_returns_bounded_chunks_from_allowlist() -> None:
 def test_runtime_zim_retriever_stops_after_budget_is_filled() -> None:
     first_archive = FakeArchive(
         {
-            "A/Signal.html": {
-                "title": "Signal",
-                "content": "<html><body><p>Use reflective material in daylight.</p></body></html>",
+            "A/WaterStorage.html": {
+                "title": "Water Storage",
+                "content": "<html><body><p>Store water safely after treatment.</p></body></html>",
             }
         }
     )
     second_archive = FakeArchive(
         {
-            "A/Fire.html": {
-                "title": "Fire",
-                "content": "<html><body><p>Keep tinder dry.</p></body></html>",
+            "A/WaterPurification.html": {
+                "title": "Water Purification",
+                "content": "<html><body><p>Boil water for one minute before drinking.</p></body></html>",
             }
         }
     )
     archive_map = {
-        "signals.zim": first_archive,
-        "survival.zim": second_archive,
+        "weak.zim": first_archive,
+        "medical.zim": second_archive,
     }
     retriever = RuntimeZimRetriever(
         Path("/unused"),
-        ("signals.zim", "survival.zim"),
+        ("weak.zim", "medical.zim"),
         archive_opener=lambda source_path: archive_map[source_path.name],
     )
 
-    results = retriever.search("how do i signal", limit=1)
+    results = retriever.search("how do i purify water", limit=1)
 
     assert len(results) == 1
+    assert results[0].source == "medical.zim:A/WaterPurification.html"
     assert first_archive.search_calls == 1
-    assert second_archive.search_calls == 0
+    assert second_archive.search_calls == 1

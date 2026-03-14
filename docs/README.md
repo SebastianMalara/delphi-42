@@ -4,7 +4,7 @@
 - Audience: Engineering, operations, and project leads.
 - Owner: Project Lead
 - Status: Draft v1
-- Last Updated: 2026-03-11
+- Last Updated: 2026-03-13
 - Dependencies: README.md, config/oracle.example.yaml, systemd/, bot/, core/, ingest/
 - Exit Criteria: A new engineer or operator can navigate from this index to all required build, run, and validation documents.
 
@@ -18,10 +18,11 @@ Read the docs in this order if you are new to the project:
 4. [`hardware/node_topology.md`](hardware/node_topology.md)
 5. [`ai/retrieval_and_response_policy.md`](ai/retrieval_and_response_policy.md)
 6. [`operations/mac_m1_pro_quickstart.md`](operations/mac_m1_pro_quickstart.md)
-7. [`operations/container_workflows.md`](operations/container_workflows.md)
-8. [`operations/deployment_runbook.md`](operations/deployment_runbook.md)
-9. [`testing/test_strategy.md`](testing/test_strategy.md)
-10. [`project/execution_plan.md`](project/execution_plan.md)
+7. [`operations/ubuntu_sigma_ovms_quickstart.md`](operations/ubuntu_sigma_ovms_quickstart.md)
+8. [`operations/container_workflows.md`](operations/container_workflows.md)
+9. [`operations/deployment_runbook.md`](operations/deployment_runbook.md)
+10. [`testing/test_strategy.md`](testing/test_strategy.md)
+11. [`project/execution_plan.md`](project/execution_plan.md)
 
 ## Documentation Taxonomy
 
@@ -57,6 +58,7 @@ Read the docs in this order if you are new to the project:
 ### Operations
 
 - [`operations/mac_m1_pro_quickstart.md`](operations/mac_m1_pro_quickstart.md): host-native Mac validation lane using LM Studio, optional Kiwix, and an optional live T114.
+- [`operations/ubuntu_sigma_ovms_quickstart.md`](operations/ubuntu_sigma_ovms_quickstart.md): host-native Ubuntu x86 validation lane using OVMS, optional Kiwix, and an optional live T114.
 - [`operations/raspberry_pi_provisioning.md`](operations/raspberry_pi_provisioning.md): base Pi setup.
 - [`operations/container_workflows.md`](operations/container_workflows.md): Mac/OrbStack development and Pi Compose workflows.
 - [`operations/deployment_runbook.md`](operations/deployment_runbook.md): deploy the full node.

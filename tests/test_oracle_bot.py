@@ -14,6 +14,7 @@ from bot.radio_interface import (
 )
 from core.oracle_service import OracleService
 from core.retriever import KeywordRetriever, RetrievalChunk
+from core.runtime_config import ReplyConfig
 from ingest.build_index import SQLiteIndexBuilder, build_chunks
 from ingest.zim_extract import ExtractedDocument
 
@@ -44,10 +45,11 @@ def test_oracle_bot_process_inbox_logs_metadata_only() -> None:
 
     events = bot.process_inbox()
 
-    assert len(events) == 1
+    assert len(events) == 2
     assert "kind=text" in events[0]
     assert "mode=deterministic_fallback" in events[0]
     assert "purify water" not in events[0]
+    assert "status=delivery_complete" in events[1]
     assert radio.sent[0].destination == "node-1"
 
 
@@ -249,7 +251,7 @@ def test_oracle_bot_returns_text_fallback_when_position_is_unavailable() -> None
         POSITION_UNAVAILABLE_TEXT,
     ]
     assert all(message.send_position is False for message in radio.sent)
-    assert "kind=text" in events[-1]
+    assert any("kind=text" in event for event in events)
 
 
 def test_oracle_bot_run_forever_recovers_after_receive_failure() -> None:
@@ -300,11 +302,85 @@ def test_oracle_bot_run_forever_recovers_after_send_failure() -> None:
         radio_factory=lambda: recovery_radio,
         sleep_fn=sleep_fn,
         logger=logging.getLogger("test.send-recovery"),
+        text_packet_retry_attempts=1,
     )
 
     with pytest.raises(StopLoop, match="done"):
         bot.run_forever(poll_interval_seconds=0.25)
 
     assert failing_radio.closed is True
-    assert recovery_radio.sent[0].destination == "node-2"
+    assert recovery_radio.sent[0].destination == "node-1"
     assert sleeps[:2] == [1.0, 0.25]
+
+
+def test_oracle_bot_spaces_multi_packet_delivery() -> None:
+    radio = DryRunRadio(
+        inbox=[IncomingMessage(sender_id="node-1", text="how do i purify water")]
+    )
+    sleeps: list[float] = []
+
+    def sleep_fn(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    router = MessageRouter(
+        OracleService(
+            retriever=KeywordRetriever(
+                [
+                    RetrievalChunk(
+                        title="Water Purification",
+                        snippet=(
+                            "Boil water for one minute before drinking. "
+                            "Let it cool in a clean container. "
+                            "Keep treated water covered."
+                        ),
+                        source="field-guide",
+                    )
+                ]
+            ),
+            reply_config=ReplyConfig(
+                short_max_chars=24,
+                continuation_max_chars=36,
+                max_continuation_packets=2,
+            ),
+        )
+    )
+    bot = OracleBot(
+        radio=radio,
+        router=router,
+        sleep_fn=sleep_fn,
+        text_packet_spacing_seconds=2.5,
+    )
+
+    bot.process_inbox()
+
+    assert len(radio.sent) == 3
+    assert sleeps == [2.5, 2.5]
+
+
+def test_oracle_bot_trims_text_packets_to_byte_budget() -> None:
+    radio = DryRunRadio(
+        inbox=[IncomingMessage(sender_id="node-1", text="how do i purify water")]
+    )
+    router = MessageRouter(
+        OracleService(
+            retriever=KeywordRetriever(
+                [
+                    RetrievalChunk(
+                        title="Water Purification",
+                        snippet="Boil water for one minute before drinking.",
+                        source="field-guide",
+                    )
+                ]
+            )
+        )
+    )
+    bot = OracleBot(
+        radio=radio,
+        router=router,
+        max_text_payload_bytes=20,
+    )
+
+    bot.process_inbox()
+
+    assert len(radio.sent[0].text.encode("utf-8")) <= 20
+    assert radio.sent[0].text.endswith("...")

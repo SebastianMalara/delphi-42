@@ -32,7 +32,38 @@ def build_prompt(
         "<full grounded answer>\n\n"
         f"SHORT must target {short_max_chars} characters or less.\n"
         f"LONG must be suitable for splitting into at most {max_continuation_packets} packets of {continuation_max_chars} characters.\n"
+        "Always include both SHORT and LONG labels exactly once.\n"
         "Do not include markdown, bullet lists, or extra headings.\n\n"
+        f"Context:\n{context_block}\n\n"
+        f"Question:\n{question}\n"
+    )
+
+
+def build_long_answer_prompt(
+    question: str,
+    context_chunks: Sequence[RetrievalChunk],
+    continuation_max_chars: int = 600,
+    max_continuation_packets: int = 3,
+) -> str:
+    """Build a grounded long-answer fallback prompt."""
+    if context_chunks:
+        context_lines = [
+            f"- {chunk.title} ({chunk.source}): {chunk.snippet}"
+            for chunk in context_chunks
+        ]
+    else:
+        context_lines = ["(no matching passages)"]
+
+    context_block = "\n".join(context_lines)
+    return (
+        "You are Delphi-42, an offline oracle node.\n"
+        "Only answer from the provided local context.\n"
+        "If the context is insufficient, return exactly: "
+        "The archive does not contain a grounded answer yet.\n\n"
+        f"Return one grounded plain-text answer suitable for splitting into at most "
+        f"{max_continuation_packets} packets of {continuation_max_chars} characters.\n"
+        "When the context supports it, expand the answer with 2 to 4 short supporting sentences.\n"
+        "Do not include labels, markdown, bullet lists, or extra headings.\n\n"
         f"Context:\n{context_block}\n\n"
         f"Question:\n{question}\n"
     )
