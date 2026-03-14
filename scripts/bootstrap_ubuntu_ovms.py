@@ -15,7 +15,8 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = REPO_ROOT / "artifacts/ubuntu-ovms"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v3"
-DEFAULT_MODEL = "OpenVINO/Phi-3.5-mini-instruct-int4-ov"
+DEFAULT_KIWIX_URL = "http://127.0.0.1:8080"
+DEFAULT_MODEL = "OpenVINO/Qwen3-8B-int4-ov"
 DEFAULT_ZIM_ALIAS = "medicine.zim"
 DEFAULT_ZIM_PROFILE = "nopic"
 DEFAULT_T114_SYMLINK = Path("/dev/delphi-t114")
@@ -192,6 +193,7 @@ def render_runtime_artifacts(
     *,
     archive: ResolvedArchive,
     base_url: str,
+    kiwix_url: str,
     model: str,
     radio_device: Path,
 ) -> dict[str, str]:
@@ -206,6 +208,7 @@ def render_runtime_artifacts(
             radio_transport="simulated",
             radio_device="",
             base_url=base_url,
+            kiwix_url=kiwix_url,
             model=model,
             zim_dir=paths.zim_dir,
             zim_alias=archive.alias,
@@ -218,6 +221,7 @@ def render_runtime_artifacts(
             radio_transport="meshtastic",
             radio_device=str(radio_device),
             base_url=base_url,
+            kiwix_url=kiwix_url,
             model=model,
             zim_dir=paths.zim_dir,
             zim_alias=archive.alias,
@@ -346,6 +350,7 @@ def _config_text(
     radio_transport: str,
     radio_device: str,
     base_url: str,
+    kiwix_url: str,
     model: str,
     zim_dir: Path,
     zim_alias: str,
@@ -382,7 +387,7 @@ def _config_text(
             - SEEK WISDOM IN PRIVATE.
 
         knowledge:
-          kiwix_url: http://127.0.0.1:8080
+          kiwix_url: {_yaml_string(kiwix_url)}
           zim_dir: {_yaml_string(str(zim_dir))}
           zim_allowlist:
             - {zim_alias}
@@ -449,6 +454,7 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("--archive-filename", required=True)
     render_parser.add_argument("--archive-url", required=True)
     render_parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    render_parser.add_argument("--kiwix-url", default=DEFAULT_KIWIX_URL)
     render_parser.add_argument("--model", default=DEFAULT_MODEL)
     render_parser.add_argument("--radio-device", required=True)
 
@@ -490,6 +496,7 @@ def main() -> None:
                 args.root,
                 archive=archive,
                 base_url=args.base_url,
+                kiwix_url=args.kiwix_url,
                 model=args.model,
                 radio_device=radio_device,
             )

@@ -8,7 +8,7 @@ Active development is now container-first for the portable parts of the stack. O
 
 For the fastest software validation loop on an Apple Silicon Mac, use the host-native M1 path in [`docs/operations/mac_m1_pro_quickstart.md`](docs/operations/mac_m1_pro_quickstart.md): Delphi-42 in a `uv`-managed environment, LM Studio on the host, optional Kiwix in Docker, staged `.zim` testing, and a supervised live T114 path over USB.
 
-For an x86 Ubuntu prototype lane such as LattePanda Sigma, use [`docs/operations/ubuntu_sigma_ovms_quickstart.md`](docs/operations/ubuntu_sigma_ovms_quickstart.md): Delphi-42 in a `uv`-managed environment, OpenVINO Model Server on the host, optional Kiwix in Docker, staged `.zim` testing, and an optional live T114 path over USB.
+For an x86 Ubuntu prototype lane such as LattePanda Sigma, use [`docs/operations/ubuntu_sigma_ovms_quickstart.md`](docs/operations/ubuntu_sigma_ovms_quickstart.md): Delphi-42 in a `uv`-managed environment, OpenVINO Model Server on the host, a managed Kiwix container for archive browsing, staged `.zim` testing, and an optional live T114 path over USB.
 
 This repository now treats [`docs/README.md`](docs/README.md) as the documentation entry point and the source of truth for how the system should be built, deployed, tested, and operated.
 

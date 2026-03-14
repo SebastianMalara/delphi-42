@@ -8,11 +8,15 @@ RADIO_DEVICE="auto"
 REFRESH_ZIM=0
 REUSE_INDEX=0
 LIVE_RELOGIN_REQUIRED=0
+MANAGE_KIWIX=1
+KIWIX_PORT=8080
 
-MODEL_ID="OpenVINO/Phi-3.5-mini-instruct-int4-ov"
+MODEL_ID="OpenVINO/Qwen3-8B-int4-ov"
 OVMS_BASE_URL="http://127.0.0.1:8000/v3"
 OVMS_IMAGE="openvino/model_server:latest-gpu"
 OVMS_CONTAINER="delphi-ovms"
+KIWIX_IMAGE="kiwix/kiwix-serve:latest"
+KIWIX_CONTAINER="delphi-kiwix"
 UDEV_RULE_PATH="/etc/udev/rules.d/99-delphi-t114.rules"
 STABLE_T114_PATH="/dev/delphi-t114"
 
@@ -38,6 +42,8 @@ Options:
   --radio-device PATH     Explicit radio path, or "auto" to detect Heltec by-id path.
   --refresh-zim           Ignore pinned state and resolve/download the ZIM again.
   --reuse-index           Reuse the existing local ZIM runtime layout instead of restaging it.
+  --no-kiwix              Skip starting the managed Kiwix browse container.
+  --kiwix-port PORT       Host port for the managed Kiwix container. Default: 8080.
   --help                  Show this help.
 EOF
 }
@@ -68,6 +74,14 @@ while [[ $# -gt 0 ]]; do
       REUSE_INDEX=1
       shift
       ;;
+    --no-kiwix)
+      MANAGE_KIWIX=0
+      shift
+      ;;
+    --kiwix-port)
+      KIWIX_PORT="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -84,6 +98,7 @@ ROOT_ABS="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expa
 VENV_DIR="$ROOT_ABS/venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
+KIWIX_URL="http://127.0.0.1:${KIWIX_PORT}"
 
 require_gpu() {
   if ! compgen -G "/dev/dri/render*" >/dev/null; then
@@ -228,11 +243,54 @@ ensure_docker_service() {
   sudo systemctl enable --now docker
 }
 
+restart_kiwix_container() {
+  status "Starting Kiwix container $KIWIX_CONTAINER on $KIWIX_URL"
+
+  sudo docker rm -f "$KIWIX_CONTAINER" >/dev/null 2>&1 || true
+  sudo docker run \
+    -d \
+    --name "$KIWIX_CONTAINER" \
+    --restart unless-stopped \
+    -p "${KIWIX_PORT}:8080" \
+    -v "$ROOT_ABS/library/zim:/data/zim:ro" \
+    "$KIWIX_IMAGE" \
+    /bin/sh \
+    -lc \
+    'exec kiwix-serve --port=8080 /data/zim/*.zim' >/dev/null
+}
+
+wait_for_kiwix() {
+  status "Waiting for Kiwix on $KIWIX_URL"
+  local attempt
+  for attempt in $(seq 1 30); do
+    status "Kiwix readiness check $attempt/30"
+    if curl --silent --fail "$KIWIX_URL" >/dev/null; then
+      return
+    fi
+    sleep 2
+  done
+
+  echo "Kiwix did not respond on $KIWIX_URL in time." >&2
+  sudo docker logs --tail 200 "$KIWIX_CONTAINER" >&2 || true
+  exit 1
+}
+
+ovms_extra_args() {
+  if [[ "$MODEL_ID" == OpenVINO/Qwen3-* ]]; then
+    printf '%s\n' --tool_parser hermes3
+    return
+  fi
+}
+
 restart_ovms_container() {
   status "Starting OVMS container $OVMS_CONTAINER with model $MODEL_ID"
   local render_gid
   render_gid="$(stat -c '%g' /dev/dri/render* | head -n 1)"
   mkdir -p "$ROOT_ABS/models"
+  local -a extra_args=()
+  while IFS= read -r arg; do
+    [[ -n "$arg" ]] && extra_args+=("$arg")
+  done < <(ovms_extra_args)
 
   sudo docker rm -f "$OVMS_CONTAINER" >/dev/null 2>&1 || true
   sudo docker run \
@@ -248,6 +306,7 @@ restart_ovms_container() {
     --source_model "$MODEL_ID" \
     --model_repository_path models \
     --task text_generation \
+    "${extra_args[@]}" \
     --rest_port 8000 \
     --target_device GPU \
     --cache_size 2 >/dev/null
@@ -296,6 +355,7 @@ render_runtime_artifacts() {
     --archive-filename "$archive_filename" \
     --archive-url "$archive_url" \
     --base-url "$OVMS_BASE_URL" \
+    --kiwix-url "$KIWIX_URL" \
     --model "$MODEL_ID" \
     --radio-device "$radio_device"
 }
@@ -338,6 +398,12 @@ main() {
   fi
 
   ensure_docker_service
+  if [[ "$MANAGE_KIWIX" -eq 1 ]]; then
+    restart_kiwix_container
+    wait_for_kiwix
+  else
+    status "Skipping managed Kiwix container startup"
+  fi
   restart_ovms_container
   wait_for_ovms
 
@@ -358,6 +424,7 @@ Bootstrap complete.
 Runtime root: $ROOT_ABS
 ZIM release: $archive_filename
 Live radio: $radio_device
+Kiwix browse URL: $(if [[ "$MANAGE_KIWIX" -eq 1 ]]; then printf '%s' "$KIWIX_URL"; else printf 'not started (--no-kiwix)'; fi)
 
 Run the simulated console with:
   $ROOT_ABS/bin/run-sim

@@ -6,6 +6,8 @@ import pytest
 from core.runtime_config import load_runtime_config
 from scripts.bootstrap_ubuntu_ovms import (
     BootstrapError,
+    DEFAULT_KIWIX_URL,
+    DEFAULT_MODEL,
     DEFAULT_ZIM_ALIAS,
     detect_heltec_radio_device,
     load_state,
@@ -50,7 +52,7 @@ def test_resolve_archive_reuses_pinned_state_without_network(tmp_path: Path) -> 
                 "archive_filename": "wikipedia_en_medicine_nopic_2026-01.zim",
                 "archive_url": "https://download.kiwix.org/zim/wikipedia/wikipedia_en_medicine_nopic_2026-01.zim",
                 "archive_alias": DEFAULT_ZIM_ALIAS,
-                "llm_model": "OpenVINO/Phi-3.5-mini-instruct-int4-ov",
+                "llm_model": DEFAULT_MODEL,
                 "llm_base_url": "http://127.0.0.1:8000/v3",
                 "radio_device": "/dev/serial/by-id/usb-Heltec-demo",
                 "generated_at": "2026-03-13T16:00:00+00:00",
@@ -94,7 +96,8 @@ def test_render_runtime_artifacts_writes_kiwix_only_configs(tmp_path: Path) -> N
             ),
         ),
         base_url="http://127.0.0.1:8000/v3",
-        model="OpenVINO/Phi-3.5-mini-instruct-int4-ov",
+        kiwix_url=DEFAULT_KIWIX_URL,
+        model=DEFAULT_MODEL,
         radio_device=Path("/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"),
     )
 
@@ -103,6 +106,7 @@ def test_render_runtime_artifacts_writes_kiwix_only_configs(tmp_path: Path) -> N
     state = load_state(tmp_path)
 
     assert sim_config.radio.transport == "simulated"
+    assert sim_config.knowledge.kiwix_url == DEFAULT_KIWIX_URL
     assert sim_config.knowledge.zim_allowlist == (DEFAULT_ZIM_ALIAS,)
     assert live_config.radio.device == "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
     assert live_config.reply.short_max_chars == 100
@@ -117,5 +121,9 @@ def test_bootstrap_script_reuses_existing_kiwix_runtime_layout() -> None:
     script_text = script_path.read_text(encoding="utf-8")
 
     assert "--reuse-index" in script_text
+    assert "--no-kiwix" in script_text
+    assert "KIWIX_CONTAINER=\"delphi-kiwix\"" in script_text
     assert "Reusing staged Kiwix archive" in script_text
     assert "allowlisted archive is missing" in script_text
+    assert f"MODEL_ID=\"{DEFAULT_MODEL}\"" in script_text
+    assert "--tool_parser hermes3" in script_text
