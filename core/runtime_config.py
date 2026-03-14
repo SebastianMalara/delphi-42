@@ -57,13 +57,10 @@ class BroadcastConfig:
 
 @dataclass(frozen=True)
 class KnowledgeConfig:
-    plaintext_dir: Path
-    index_path: Path
     kiwix_url: str = "http://127.0.0.1:8080"
     zim_dir: Path = Path("data/library/zim")
-    runtime_zim_fallback_enabled: bool = False
-    runtime_zim_allowlist: tuple[str, ...] = ()
-    runtime_zim_search_limit: int = 3
+    zim_allowlist: tuple[str, ...] = ()
+    zim_search_limit: int = 3
 
 
 @dataclass(frozen=True)
@@ -79,8 +76,8 @@ class LLMConfig:
 @dataclass(frozen=True)
 class ReplyConfig:
     short_max_chars: int = 120
-    continuation_max_chars: int = 600
-    max_continuation_packets: int = 3
+    condensed_max_chars: int = 600
+    max_total_packets: int = 6
 
 
 @dataclass(frozen=True)
@@ -107,34 +104,29 @@ class OracleRuntimeConfig:
             f"radio_device={self.radio.device or '-'} "
             f"channel={self.radio.channel} "
             f"radio_payload_bytes={self.radio.max_text_payload_bytes} "
-            f"index={self.knowledge.index_path} "
+            f"zim_dir={self.knowledge.zim_dir} "
             f"llm_backend={self.llm.backend} "
             f"llm_provider={self.llm.provider} "
             f"llm_model={self.llm.model} "
-            f"zim_fallback={self.knowledge.runtime_zim_fallback_enabled} "
+            f"zim_allowlist={','.join(self.knowledge.zim_allowlist) or '-'} "
             f"reply_short_max={self.reply.short_max_chars}"
         )
 
     def validate_for_bot(self) -> None:
-        if not self.knowledge.index_path.exists():
+        if not self.knowledge.zim_dir.exists():
             raise ConfigError(
-                f"Configured index path does not exist: {self.knowledge.index_path}"
+                f"Configured zim_dir does not exist: {self.knowledge.zim_dir}"
             )
-        if self.knowledge.runtime_zim_fallback_enabled:
-            if not self.knowledge.zim_dir.exists():
-                raise ConfigError(
-                    f"Configured zim_dir does not exist: {self.knowledge.zim_dir}"
-                )
-            missing = [
-                filename
-                for filename in self.knowledge.runtime_zim_allowlist
-                if not (self.knowledge.zim_dir / filename).exists()
-            ]
-            if missing:
-                raise ConfigError(
-                    "Configured runtime_zim_allowlist files are missing: "
-                    + ", ".join(missing)
-                )
+        missing = [
+            filename
+            for filename in self.knowledge.zim_allowlist
+            if not (self.knowledge.zim_dir / filename).exists()
+        ]
+        if missing:
+            raise ConfigError(
+                "Configured zim_allowlist files are missing: "
+                + ", ".join(missing)
+            )
 
 
 def load_runtime_config(
@@ -181,16 +173,6 @@ def load_runtime_config(
             messages=_parse_broadcast_messages(raw_data),
         ),
         knowledge=KnowledgeConfig(
-            plaintext_dir=_resolve_path(
-                raw_data.get("knowledge", {}).get(
-                    "plaintext_dir", "data/library/plaintext"
-                ),
-                root_dir,
-            ),
-            index_path=_resolve_path(
-                raw_data.get("knowledge", {}).get("index_path", "data/index/oracle.db"),
-                root_dir,
-            ),
             kiwix_url=str(
                 raw_data.get("knowledge", {}).get("kiwix_url", "http://127.0.0.1:8080")
             ),
@@ -198,16 +180,11 @@ def load_runtime_config(
                 raw_data.get("knowledge", {}).get("zim_dir", "data/library/zim"),
                 root_dir,
             ),
-            runtime_zim_fallback_enabled=bool(
-                raw_data.get("knowledge", {}).get(
-                    "runtime_zim_fallback_enabled", False
-                )
+            zim_allowlist=_parse_string_tuple(
+                raw_data.get("knowledge", {}).get("zim_allowlist", ())
             ),
-            runtime_zim_allowlist=_parse_string_tuple(
-                raw_data.get("knowledge", {}).get("runtime_zim_allowlist", ())
-            ),
-            runtime_zim_search_limit=int(
-                raw_data.get("knowledge", {}).get("runtime_zim_search_limit", 3)
+            zim_search_limit=int(
+                raw_data.get("knowledge", {}).get("zim_search_limit", 3)
             ),
         ),
         llm=LLMConfig(
@@ -232,11 +209,11 @@ def load_runtime_config(
         ),
         reply=ReplyConfig(
             short_max_chars=int(raw_data.get("reply", {}).get("short_max_chars", 120)),
-            continuation_max_chars=int(
-                raw_data.get("reply", {}).get("continuation_max_chars", 600)
+            condensed_max_chars=int(
+                raw_data.get("reply", {}).get("condensed_max_chars", 600)
             ),
-            max_continuation_packets=int(
-                raw_data.get("reply", {}).get("max_continuation_packets", 3)
+            max_total_packets=int(
+                raw_data.get("reply", {}).get("max_total_packets", 6)
             ),
         ),
         wifi=WiFiConfig(ssid=str(raw_data.get("wifi", {}).get("ssid", "DELPHI-42"))),
@@ -325,19 +302,13 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
             raise ConfigError("llm.model must not be empty for openai-compatible.")
     if config.llm.timeout_seconds <= 0:
         raise ConfigError("llm.timeout_seconds must be greater than 0.")
-    if config.knowledge.runtime_zim_search_limit <= 0:
-        raise ConfigError("knowledge.runtime_zim_search_limit must be greater than 0.")
-    if (
-        config.knowledge.runtime_zim_fallback_enabled
-        and not config.knowledge.runtime_zim_allowlist
-    ):
-        raise ConfigError(
-            "knowledge.runtime_zim_allowlist must not be empty when "
-            "runtime_zim_fallback_enabled is true."
-        )
+    if config.knowledge.zim_search_limit <= 0:
+        raise ConfigError("knowledge.zim_search_limit must be greater than 0.")
+    if not config.knowledge.zim_allowlist:
+        raise ConfigError("knowledge.zim_allowlist must not be empty.")
     if config.reply.short_max_chars <= 0:
         raise ConfigError("reply.short_max_chars must be greater than 0.")
-    if config.reply.continuation_max_chars <= 0:
-        raise ConfigError("reply.continuation_max_chars must be greater than 0.")
-    if config.reply.max_continuation_packets < 0:
-        raise ConfigError("reply.max_continuation_packets must be 0 or greater.")
+    if config.reply.condensed_max_chars <= 0:
+        raise ConfigError("reply.condensed_max_chars must be greater than 0.")
+    if config.reply.max_total_packets <= 0:
+        raise ConfigError("reply.max_total_packets must be greater than 0.")

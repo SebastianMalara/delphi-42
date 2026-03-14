@@ -11,6 +11,7 @@ class IntentType(str, Enum):
     LOCATION = "location"
     POSITION = "position"
     ASK = "ask"
+    CHAT = "chat"
     UNKNOWN = "unknown"
 
 
@@ -29,4 +30,6 @@ def classify_command(command: ParsedCommand) -> Intent:
         return Intent(kind=IntentType.POSITION)
     if command.name == "ask" and command.argument:
         return Intent(kind=IntentType.ASK, question=command.argument)
+    if command.name == "chat" and command.argument:
+        return Intent(kind=IntentType.CHAT, question=command.argument)
     return Intent(kind=IntentType.UNKNOWN)

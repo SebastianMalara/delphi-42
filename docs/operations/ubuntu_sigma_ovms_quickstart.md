@@ -87,12 +87,11 @@ curl http://127.0.0.1:8000/v3/models
    - keep `llm.base_url` pointed at the OVMS `/v3` base URL
    - replace `llm.model` with the exact model id returned by `/v3/models`
 
-## Stage A: Simulated Radio + OVMS + Sample Corpus
-
-Build the sample index:
+## Stage A: Simulated Radio + OVMS + Allowlisted ZIM
 
 ```bash
-uv run python -m ingest.build_index --input-dir sample_data/plaintext --db data/index/oracle-ubuntu-ovms.db
+mkdir -p data/library/zim
+cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
 Run preflight:
@@ -109,16 +108,16 @@ DELPHI_CONFIG=config/oracle.ubuntu.ovms.sim.yaml uv run python -m bot.dev_consol
 
 Smoke tests:
 
-- `how do i purify water`
+- `?ask how do i purify water`
 - `/public how do i purify water`
-- `where`
+- `?where`
 
 Expected results:
 
-- direct `ask` produces a bounded reply
+- direct `?ask` produces a bounded reply
 - public traffic is ignored
 - `where` produces a text confirmation plus a simulated private position packet
-- if OVMS is down or the model id is wrong, Delphi-42 degrades to deterministic summaries
+- if OVMS is down or the model id is wrong, Delphi-42 degrades to deterministic grounded summaries
 
 ## Stage B: Real `.zim` Validation
 
@@ -128,28 +127,17 @@ Copy one real archive into the local ZIM directory and stage it under the stable
 cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
-Enable runtime fallback in [`config/oracle.ubuntu.ovms.sim.yaml`](../../config/oracle.ubuntu.ovms.sim.yaml):
-
-- set `knowledge.runtime_zim_fallback_enabled: true`
-
-Validate direct runtime `.zim` fallback first by keeping the sample-only SQLite index and rerunning preflight:
+Validate direct runtime `.zim` retrieval by rerunning preflight:
 
 ```bash
 uv run python -m scripts.host_preflight --config config/oracle.ubuntu.ovms.sim.yaml
 ```
 
-Then validate the ingest path explicitly:
-
-```bash
-uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist medicine.zim
-uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-ubuntu-ovms-zim.db
-```
-
 Expected results:
 
-- `extract_zim` writes normalized plaintext under `data/library/plaintext`
-- the extracted archive can be indexed into a second SQLite database
-- runtime `.zim` fallback works even before you switch the main runtime to the extracted index
+- direct Kiwix-backed `.zim` lookup works from the allowlisted archive
+- the first packet is a condensate of the continuation packets
+- runtime `.zim` retrieval no longer depends on a separate index build
 
 ## Stage C: Supervised Live T114 Over USB
 

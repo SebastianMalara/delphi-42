@@ -10,7 +10,7 @@ def test_message_router_ignores_public_messages() -> None:
     routed = router.route(
         IncomingMessage(
             sender_id="node-1",
-            text="ask water",
+            text="?ask water",
             is_direct_message=False,
         )
     )
@@ -24,7 +24,7 @@ def test_message_router_emits_private_position_packet() -> None:
     routed = router.route(
         IncomingMessage(
             sender_id="node-1",
-            text="where",
+            text="?where",
             is_direct_message=True,
         )
     )
@@ -53,12 +53,12 @@ def test_message_router_routes_grounded_ask_reply() -> None:
     routed = router.route(
         IncomingMessage(
             sender_id="node-1",
-            text="best place to pitch camp above the flood line",
+            text="?ask best place to pitch camp above the flood line",
             is_direct_message=True,
         )
     )
 
     assert routed is not None
-    assert routed.reply.mode is ReplyMode.DETERMINISTIC_FALLBACK
+    assert routed.reply.mode is ReplyMode.ASK_DETERMINISTIC_FALLBACK
     assert routed.messages[0].destination == "node-1"
     assert "flood line" in routed.messages[0].text

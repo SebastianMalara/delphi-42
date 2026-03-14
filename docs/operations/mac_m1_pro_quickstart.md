@@ -59,12 +59,11 @@ curl http://127.0.0.1:1234/v1/models
    - keep `llm.provider: lm-studio`
    - replace `llm.model` with the exact model id returned by `/v1/models`
 
-## Stage A: Simulated Radio + LM Studio + Sample Corpus
-
-Build the sample index:
+## Stage A: Simulated Radio + LM Studio + Allowlisted ZIM
 
 ```bash
-uv run python -m ingest.build_index --input-dir sample_data/plaintext --db data/index/oracle-mac.db
+mkdir -p data/library/zim
+cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
 Run preflight:
@@ -83,53 +82,30 @@ DELPHI_CONFIG=config/oracle.mac.sim.yaml uv run python -m bot.dev_console
 
 Smoke tests:
 
-- `how do i purify water`
+- `?ask how do i purify water`
 - `/public how do i purify water`
-- `where`
+- `?where`
 
 Expected results:
 
-- direct `ask` produces a bounded reply
+- direct `?ask` produces a bounded reply
 - public traffic is ignored
 - `where` produces a text confirmation plus a simulated private position packet
-- if LM Studio is down or the model id is wrong, Delphi-42 degrades to deterministic summaries
+- if LM Studio is down or the model id is wrong, Delphi-42 degrades to deterministic grounded summaries
 
 ## Stage B: Real `.zim` Validation
 
-Copy one real archive into the local ZIM directory and stage it under the stable local alias:
-
-```bash
-cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
-```
-
-Enable runtime fallback in [`config/oracle.mac.sim.yaml`](../../config/oracle.mac.sim.yaml):
-
-- set `knowledge.runtime_zim_fallback_enabled: true`
-
-Validate direct runtime `.zim` fallback first by keeping the sample-only SQLite index and rerunning preflight:
+Validate direct runtime `.zim` retrieval by rerunning preflight:
 
 ```bash
 uv run python -m scripts.mac_preflight --config config/oracle.mac.sim.yaml
 ```
 
-Run the simulated console again and ask a question that is not answered by `sample_data/plaintext` but is likely covered by the allowlisted archive. That should force:
+Run the simulated console again and ask a question likely covered by the allowlisted archive. That should exercise:
 
-- SQLite miss
-- bounded runtime `.zim` lookup
-- LM Studio or deterministic answer formatting over `.zim`-derived chunks
-
-Then validate the ingest path explicitly:
-
-```bash
-uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist medicine.zim
-uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-mac-zim.db
-```
-
-Expected results:
-
-- `extract_zim` writes normalized plaintext under `data/library/plaintext`
-- the extracted archive can be indexed into a second SQLite database
-- runtime `.zim` fallback works even before you switch the main runtime to the extracted index
+- direct Kiwix-backed `.zim` lookup
+- multi-pass answer condensation
+- LM Studio or deterministic fallback formatting over `.zim`-derived passages
 
 ## Stage C: Supervised Live T114 Over USB
 

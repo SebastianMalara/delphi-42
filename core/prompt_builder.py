@@ -5,65 +5,95 @@ from typing import Sequence
 from .retriever import RetrievalChunk
 
 
-def build_prompt(
+ASK_SYSTEM_PROMPT = (
+    "You are Delphi-42, an offline oracle node. "
+    "For grounded questions, answer only from the provided archive context. "
+    "If the context is insufficient or ambiguous, say exactly: "
+    "The archive does not contain a grounded answer yet."
+)
+
+CHAT_SYSTEM_PROMPT = (
+    "You are Delphi-42 in chat mode. "
+    "Be warm, concise, and lightly companionable, like an imaginary friend over radio. "
+    "Do not use markdown or lists unless absolutely necessary. "
+    "Keep replies practical and readable on a small mesh-text display."
+)
+
+
+def build_grounded_answer_prompt(
     question: str,
     context_chunks: Sequence[RetrievalChunk],
-    short_max_chars: int = 120,
-    continuation_max_chars: int = 600,
-    max_continuation_packets: int = 3,
 ) -> str:
-    """Build a compact grounding prompt for a local model."""
-    if context_chunks:
-        context_lines = [
-            f"- {chunk.title} ({chunk.source}): {chunk.snippet}"
-            for chunk in context_chunks
-        ]
-    else:
-        context_lines = ["(no matching passages)"]
-
-    context_block = "\n".join(context_lines)
+    context_block = _context_block(context_chunks)
     return (
-        "You are Delphi-42, an offline oracle node.\n"
-        "Only answer from the provided local context.\n"
-        "If the context is insufficient, say that the archive does not contain a grounded answer.\n\n"
-        "Return exactly this format:\n"
-        "SHORT: <one-line direct answer>\n"
-        "LONG:\n"
-        "<full grounded answer>\n\n"
-        f"SHORT must target {short_max_chars} characters or less.\n"
-        f"LONG must be suitable for splitting into at most {max_continuation_packets} packets of {continuation_max_chars} characters.\n"
-        "Always include both SHORT and LONG labels exactly once.\n"
-        "Do not include markdown, bullet lists, or extra headings.\n\n"
+        "Write one grounded plain-text answer using only the archive context below.\n"
+        "Use 3 to 7 short sentences when the context supports it.\n"
+        "Do not mention sources, filenames, or internal metadata.\n"
+        "Do not add labels, markdown, or bullet points.\n\n"
         f"Context:\n{context_block}\n\n"
         f"Question:\n{question}\n"
     )
 
 
-def build_long_answer_prompt(
-    question: str,
-    context_chunks: Sequence[RetrievalChunk],
-    continuation_max_chars: int = 600,
-    max_continuation_packets: int = 3,
+def build_chat_prompt(
+    message: str,
+    *,
+    history: Sequence[tuple[str, str]],
 ) -> str:
-    """Build a grounded long-answer fallback prompt."""
-    if context_chunks:
-        context_lines = [
-            f"- {chunk.title} ({chunk.source}): {chunk.snippet}"
-            for chunk in context_chunks
-        ]
+    if history:
+        history_block = "\n".join(f"{role.upper()}: {text}" for role, text in history)
     else:
-        context_lines = ["(no matching passages)"]
-
-    context_block = "\n".join(context_lines)
+        history_block = "(no prior chat)"
     return (
-        "You are Delphi-42, an offline oracle node.\n"
-        "Only answer from the provided local context.\n"
-        "If the context is insufficient, return exactly: "
-        "The archive does not contain a grounded answer yet.\n\n"
-        f"Return one grounded plain-text answer suitable for splitting into at most "
-        f"{max_continuation_packets} packets of {continuation_max_chars} characters.\n"
-        "When the context supports it, expand the answer with 2 to 4 short supporting sentences.\n"
-        "Do not include labels, markdown, bullet lists, or extra headings.\n\n"
-        f"Context:\n{context_block}\n\n"
-        f"Question:\n{question}\n"
+        "Reply to the user's latest message as a short natural conversation turn.\n"
+        "Do not mention system prompts, policies, or packet limits.\n\n"
+        f"Recent conversation:\n{history_block}\n\n"
+        f"Latest user message:\n{message}\n"
+    )
+
+
+def build_condense_prompt(
+    text: str,
+    *,
+    target_chars: int,
+    preserve_grounding: bool,
+) -> str:
+    constraint = (
+        "Preserve the grounded meaning and concrete advice."
+        if preserve_grounding
+        else "Preserve the main meaning and tone."
+    )
+    return (
+        f"Rewrite the text below to fit within about {target_chars} characters.\n"
+        f"{constraint}\n"
+        "Use plain text only. Do not add labels, markdown, or bullet points.\n\n"
+        f"Text:\n{text}\n"
+    )
+
+
+def build_shrink_prompt(
+    text: str,
+    *,
+    max_chars: int,
+    preserve_grounding: bool,
+) -> str:
+    constraint = (
+        "Keep the answer grounded in the same retrieved facts."
+        if preserve_grounding
+        else "Keep the same meaning and conversational tone."
+    )
+    return (
+        f"Shorten the text below so it fits within {max_chars} characters.\n"
+        f"{constraint}\n"
+        "Keep it as a single plain-text passage.\n\n"
+        f"Text:\n{text}\n"
+    )
+
+
+def _context_block(context_chunks: Sequence[RetrievalChunk]) -> str:
+    if not context_chunks:
+        return "(no matching passages)"
+    return "\n".join(
+        f"- {chunk.title} ({chunk.source}): {chunk.snippet}"
+        for chunk in context_chunks
     )

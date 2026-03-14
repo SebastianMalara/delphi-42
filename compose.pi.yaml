@@ -8,16 +8,6 @@ services:
       - /dev/ttyUSB0:/dev/ttyUSB0
     restart: unless-stopped
 
-  oracle-indexer:
-    command:
-      - python
-      - -m
-      - ingest.build_index
-      - --input-dir
-      - /workspace/data/library/plaintext
-      - --db
-      - /workspace/data/index/oracle.db
-
   kiwix:
     volumes:
       - ./data/library/zim:/data/zim:ro

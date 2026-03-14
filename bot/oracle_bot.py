@@ -8,9 +8,8 @@ from typing import Callable
 
 from core.llm_runner import LLMRunner, ModelUnavailableError, OpenAICompatibleRunner
 from core.oracle_service import OracleService
-from core.retriever import SQLiteRetriever
+from core.retriever import KiwixDependencyError, KiwixRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig, load_runtime_config
-from core.zim_retriever import RuntimeZimRetriever
 
 from .message_router import MessageRouter, RoutedReply
 from .radio_interface import (
@@ -24,7 +23,7 @@ from .radio_interface import (
 
 
 LOGGER = logging.getLogger("delphi42.bot")
-POSITION_UNAVAILABLE_TEXT = "Position fix unavailable right now."
+POSITION_UNAVAILABLE_TEXT = "🤖 Position fix unavailable right now."
 
 
 class OracleBot:
@@ -209,11 +208,13 @@ class OracleBot:
             f"to={outbound.destination}",
             f"channel={outbound.channel}",
             f"kind={delivery_kind}",
+            f"command={routed.reply.command_name}",
             f"mode={routed.reply.mode.value}",
             f"hits={routed.reply.retrieval_hits}",
             f"retrieval={routed.reply.retrieval_source}",
             f"confidence={routed.reply.retrieval_confidence}",
             f"packet_count={len(routed.reply.packets)}",
+            f"shrink_attempts={routed.reply.shrink_attempts}",
             f"sources={','.join(routed.reply.retrieval_sources) or '-'}",
             f"titles={','.join(routed.reply.retrieval_titles) or '-'}",
             f"scores={','.join(str(score) for score in routed.reply.retrieval_scores) or '-'}",
@@ -292,9 +293,12 @@ def build_router(
     logger: logging.Logger | None = None,
 ) -> MessageRouter:
     logger = logger or LOGGER
-    retriever = SQLiteRetriever(config.knowledge.index_path)
-    fallback_retriever = _build_zim_retriever(config, logger)
-    logger.info("loaded retriever index=%s", config.knowledge.index_path)
+    retriever = _build_kiwix_retriever(config, logger)
+    logger.info(
+        "loaded retriever dir=%s allowlist=%s",
+        config.knowledge.zim_dir,
+        ",".join(config.knowledge.zim_allowlist),
+    )
 
     llm = _build_llm_runner(config, logger)
     return MessageRouter(
@@ -302,7 +306,7 @@ def build_router(
             retriever=retriever,
             llm=llm,
             reply_config=config.reply,
-            fallback_retriever=fallback_retriever,
+            packet_byte_limit=config.radio.max_text_payload_bytes,
         )
     )
 
@@ -351,22 +355,24 @@ def _build_llm_runner(
     return runner
 
 
-def _build_zim_retriever(
+def _build_kiwix_retriever(
     config: OracleRuntimeConfig,
     logger: logging.Logger,
 ):
-    if not config.knowledge.runtime_zim_fallback_enabled:
-        return None
-
-    retriever = RuntimeZimRetriever(
-        config.knowledge.zim_dir,
-        config.knowledge.runtime_zim_allowlist,
-        default_limit=config.knowledge.runtime_zim_search_limit,
-    )
+    try:
+        retriever = KiwixRetriever(
+            config.knowledge.zim_dir,
+            config.knowledge.zim_allowlist,
+            default_limit=config.knowledge.zim_search_limit,
+            search_limit=config.knowledge.zim_search_limit,
+        )
+    except KiwixDependencyError as exc:
+        logger.warning("kiwix retriever unavailable: %s", exc)
+        raise
     logger.info(
-        "loaded runtime zim fallback dir=%s allowlist=%s",
+        "loaded kiwix retriever dir=%s allowlist=%s",
         config.knowledge.zim_dir,
-        ",".join(config.knowledge.runtime_zim_allowlist),
+        ",".join(config.knowledge.zim_allowlist),
     )
     return retriever
 
@@ -391,7 +397,7 @@ def main() -> None:
 
     try:
         bot = build_oracle_bot(config_path)
-    except (ConfigError, FileNotFoundError, ValueError) as exc:
+    except (ConfigError, FileNotFoundError, ValueError, KiwixDependencyError) as exc:
         raise SystemExit(str(exc)) from exc
 
     bot.run_forever()

@@ -37,7 +37,7 @@ Options:
   --zim-url URL           Override the Kiwix download URL.
   --radio-device PATH     Explicit radio path, or "auto" to detect Heltec by-id path.
   --refresh-zim           Ignore pinned state and resolve/download the ZIM again.
-  --reuse-index           Reuse existing extracted plaintext and SQLite index instead of rebuilding them.
+  --reuse-index           Reuse the existing local ZIM runtime layout instead of restaging it.
   --help                  Show this help.
 EOF
 }
@@ -196,40 +196,27 @@ download_archive() {
   ln -sfn "releases/$archive_filename" "$ROOT_ABS/library/zim/medicine.zim"
 }
 
-seed_and_build_index() {
+stage_kiwix_runtime() {
   (
     cd "$REPO_ROOT"
-    status "Extracting ZIM contents into $ROOT_ABS/library/plaintext"
-    "$PYTHON_BIN" -m ingest.extract_zim \
-      --zim-dir "$ROOT_ABS/library/zim" \
-      --output-dir "$ROOT_ABS/library/plaintext" \
-      --allowlist "medicine.zim"
-    status "Building retrieval index at $ROOT_ABS/index/oracle-ubuntu-ovms.db"
-    "$PYTHON_BIN" -m ingest.build_index \
-      --input-dir "$ROOT_ABS/library/plaintext" \
-      --db "$ROOT_ABS/index/oracle-ubuntu-ovms.db"
+    status "Using allowlisted ZIM archives directly from $ROOT_ABS/library/zim"
   )
 }
 
 reuse_existing_index() {
-  local plaintext_dir="$ROOT_ABS/library/plaintext"
-  local index_path="$ROOT_ABS/index/oracle-ubuntu-ovms.db"
+  local zim_dir="$ROOT_ABS/library/zim"
+  local archive_path="$zim_dir/medicine.zim"
 
-  if [[ ! -d "$plaintext_dir" ]]; then
-    echo "--reuse-index requested but plaintext directory is missing: $plaintext_dir" >&2
+  if [[ ! -d "$zim_dir" ]]; then
+    echo "--reuse-index requested but ZIM directory is missing: $zim_dir" >&2
     exit 1
   fi
-  if ! find "$plaintext_dir" -type f -print -quit | grep -q .; then
-    echo "--reuse-index requested but plaintext directory is empty: $plaintext_dir" >&2
-    exit 1
-  fi
-  if [[ ! -f "$index_path" ]]; then
-    echo "--reuse-index requested but index is missing: $index_path" >&2
+  if [[ ! -e "$archive_path" ]]; then
+    echo "--reuse-index requested but allowlisted archive is missing: $archive_path" >&2
     exit 1
   fi
 
-  status "Reusing existing extracted plaintext at $plaintext_dir"
-  status "Reusing existing retrieval index at $index_path"
+  status "Reusing staged Kiwix archive at $archive_path"
 }
 
 detect_radio() {
@@ -347,7 +334,7 @@ main() {
   if [[ "$REUSE_INDEX" -eq 1 ]]; then
     reuse_existing_index
   else
-    seed_and_build_index
+    stage_kiwix_runtime
   fi
 
   ensure_docker_service

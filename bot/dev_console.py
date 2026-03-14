@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from core.runtime_config import ConfigError
+from core.retriever import KiwixDependencyError
 
 from .message_router import MessageRouter
 from .oracle_bot import OracleBot, build_router, load_config
@@ -43,7 +44,7 @@ def main() -> None:
 
     try:
         bot, radio, _ = build_dev_console(config_path)
-    except (ConfigError, FileNotFoundError, ValueError) as exc:
+    except (ConfigError, FileNotFoundError, ValueError, KiwixDependencyError) as exc:
         raise SystemExit(str(exc)) from exc
 
     sender_id = "dev-node"

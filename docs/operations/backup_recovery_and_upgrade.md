@@ -19,7 +19,7 @@
 - Compose overrides or environment files used on the Pi
 - benchmark and field-evaluation artifacts
 
-Generated artifacts such as the SQLite index can be rebuilt and do not need to be the primary backup target if source corpus, config, and StackFlow package state are preserved.
+Generated artifacts such as temporary caches can be rebuilt and do not need to be the primary backup target if the allowlisted `.zim` archives, config, and StackFlow package state are preserved.
 
 ## Recovery Priorities
 

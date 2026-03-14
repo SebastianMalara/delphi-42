@@ -37,9 +37,7 @@ class BootstrapPaths:
     venv_dir: Path
     config_dir: Path
     bin_dir: Path
-    index_dir: Path
     library_dir: Path
-    plaintext_dir: Path
     zim_dir: Path
     zim_releases_dir: Path
     models_dir: Path
@@ -74,9 +72,7 @@ def build_paths(root: Path) -> BootstrapPaths:
         venv_dir=root / "venv",
         config_dir=root / "config",
         bin_dir=root / "bin",
-        index_dir=root / "index",
         library_dir=root / "library",
-        plaintext_dir=root / "library/plaintext",
         zim_dir=root / "library/zim",
         zim_releases_dir=root / "library/zim/releases",
         models_dir=root / "models",
@@ -211,8 +207,6 @@ def render_runtime_artifacts(
             radio_device="",
             base_url=base_url,
             model=model,
-            index_path=paths.index_dir / "oracle-ubuntu-ovms.db",
-            plaintext_dir=paths.plaintext_dir,
             zim_dir=paths.zim_dir,
             zim_alias=archive.alias,
         ),
@@ -225,8 +219,6 @@ def render_runtime_artifacts(
             radio_device=str(radio_device),
             base_url=base_url,
             model=model,
-            index_path=paths.index_dir / "oracle-ubuntu-ovms.db",
-            plaintext_dir=paths.plaintext_dir,
             zim_dir=paths.zim_dir,
             zim_alias=archive.alias,
         ),
@@ -259,8 +251,6 @@ def _ensure_runtime_directories(paths: BootstrapPaths) -> None:
         paths.root,
         paths.config_dir,
         paths.bin_dir,
-        paths.index_dir,
-        paths.plaintext_dir,
         paths.zim_dir,
         paths.zim_releases_dir,
         paths.models_dir,
@@ -357,8 +347,6 @@ def _config_text(
     radio_device: str,
     base_url: str,
     model: str,
-    index_path: Path,
-    plaintext_dir: Path,
     zim_dir: Path,
     zim_alias: str,
 ) -> str:
@@ -368,7 +356,7 @@ def _config_text(
     radio_retry_delay = 15.0 if is_live_radio else 0.0
     radio_payload_bytes = 120 if is_live_radio else 0
     short_max_chars = 100 if is_live_radio else 120
-    continuation_max_chars = 120 if is_live_radio else 600
+    condensed_max_chars = 600
     return textwrap.dedent(
         f"""\
         node_name: {node_name}
@@ -394,14 +382,11 @@ def _config_text(
             - SEEK WISDOM IN PRIVATE.
 
         knowledge:
-          plaintext_dir: {_yaml_string(str(plaintext_dir))}
-          index_path: {_yaml_string(str(index_path))}
           kiwix_url: http://127.0.0.1:8080
           zim_dir: {_yaml_string(str(zim_dir))}
-          runtime_zim_fallback_enabled: true
-          runtime_zim_allowlist:
+          zim_allowlist:
             - {zim_alias}
-          runtime_zim_search_limit: 3
+          zim_search_limit: 3
 
         llm:
           backend: openai-compatible
@@ -413,8 +398,8 @@ def _config_text(
 
         reply:
           short_max_chars: {short_max_chars}
-          continuation_max_chars: {continuation_max_chars}
-          max_continuation_packets: 3
+          condensed_max_chars: {condensed_max_chars}
+          max_total_packets: 6
 
         wifi:
           ssid: DELPHI-42-OVMS

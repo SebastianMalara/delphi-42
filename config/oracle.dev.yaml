@@ -21,13 +21,11 @@ broadcasts:
     - SEEK WISDOM IN PRIVATE.
 
 knowledge:
-  plaintext_dir: sample_data/plaintext
-  index_path: artifacts/dev/oracle.db
   kiwix_url: http://kiwix:8080
   zim_dir: data/library/zim
-  runtime_zim_fallback_enabled: false
-  runtime_zim_allowlist: []
-  runtime_zim_search_limit: 3
+  zim_allowlist:
+    - medicine.zim
+  zim_search_limit: 3
 
 llm:
   backend: openai-compatible
@@ -39,8 +37,8 @@ llm:
 
 reply:
   short_max_chars: 120
-  continuation_max_chars: 600
-  max_continuation_packets: 3
+  condensed_max_chars: 600
+  max_total_packets: 6
 
 wifi:
   ssid: DELPHI-42-DEV

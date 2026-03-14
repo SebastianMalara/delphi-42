@@ -20,33 +20,18 @@ Prototype v1 now prefers container packaging for the portable runtime:
 
 1. Provision the Raspberry Pi using [`raspberry_pi_provisioning.md`](raspberry_pi_provisioning.md).
 2. Clone or copy the repository to `/opt/delphi-42`.
-3. Create the persistent data directories used by the Pi Compose profile:
-   - `data/library/plaintext`
+3. Create the persistent data directory used by the Pi Compose profile:
    - `data/library/zim`
-   - `data/index`
 4. Copy or adapt `config/oracle.pi.yaml` for site-local values:
    - radio device path
-   - index and corpus paths
    - `knowledge.zim_dir`
-   - `knowledge.runtime_zim_allowlist`
+   - `knowledge.zim_allowlist`
    - `llm.base_url`
    - `llm.model`
    - hotspot SSID
-6. Stage the initial retrieval corpus under the configured plaintext directory and the curated Kiwix ZIM set under the configured ZIM directory.
-   - If you use a versioned medicine archive download, copy or symlink it into the configured ZIM directory as `medicine.zim` before extraction so it matches the allowlist examples below.
-7. If the answer corpus includes `.zim` sources, export them into staged plaintext:
-
-```bash
-python -m ingest.extract_zim --zim-dir /opt/delphi-42/data/library/zim --output-dir /opt/delphi-42/data/library/plaintext --allowlist medicine.zim
-```
-
-8. Build the initial index:
-
-```bash
-python -m ingest.build_index --input-dir /opt/delphi-42/data/library/plaintext --db /opt/delphi-42/data/index/oracle.db
-```
-
-9. Validate the local StackFlow service before starting Delphi-42:
+6. Stage the curated Kiwix ZIM set under the configured ZIM directory.
+   - If you use a versioned medicine archive download, copy or symlink it into the configured ZIM directory as `medicine.zim` so it matches the allowlist examples below.
+7. Validate the local StackFlow service before starting Delphi-42:
 
 ```bash
 curl http://127.0.0.1:8000/v1/models
@@ -56,22 +41,20 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{"model":"qwen3-1.7B-Int8-ctx-axcl","messages":[{"role":"user","content":"Reply with READY"}]}'
 ```
 
-10. Start the Compose stack:
+8. Start the Compose stack:
 
 ```bash
 docker compose -f compose.yaml -f compose.pi.yaml up --build -d
 ```
 
-11. Validate one `help`, one `ask`, and one `where` flow before field deployment.
+9. Validate one `?help`, one `?ask`, and one `?where` flow before field deployment.
 
 ## Deployment Outputs
 
 - valid runtime config
-- present StackFlow model service and corpus
-- populated SQLite index
+- present StackFlow model service and allowlisted `.zim` archives
 - running `oracle-app` container
 - reachable hotspot archive
-- aligned retrieval index derived from the staged answer corpus
 
 ## Rollback Rule
 
@@ -81,5 +64,4 @@ If any deployment step fails after service start:
 - restore previous config and data snapshot if available
 - verify radio and storage mounts
 - verify `llm-openai-api` health and visible model list
-- rerun `extract_zim` if the allowlisted `.zim` corpus changed or the staged plaintext was lost
-- rebuild the index before attempting restart
+- restage the allowlisted `.zim` files before attempting restart

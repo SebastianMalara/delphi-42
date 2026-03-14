@@ -1,21 +1,4 @@
 services:
-  oracle-indexer:
-    build:
-      context: .
-    image: delphi42:latest
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command:
-      - python
-      - -m
-      - ingest.build_index
-      - --input-dir
-      - /workspace/sample_data/plaintext
-      - --db
-      - /workspace/artifacts/dev/oracle.db
-    restart: "no"
-
   oracle-app:
     build:
       context: .
@@ -23,9 +6,6 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
-    depends_on:
-      oracle-indexer:
-        condition: service_completed_successfully
     environment:
       DELPHI_LOG_LEVEL: INFO
     command:

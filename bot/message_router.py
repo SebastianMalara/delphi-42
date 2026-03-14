@@ -26,7 +26,7 @@ class MessageRouter:
             return None
 
         command = parse_command(message.text)
-        reply = self.oracle_service.handle(command)
+        reply = self.oracle_service.handle(command, sender_id=message.sender_id)
         return RoutedReply(
             inbound=message,
             reply=reply,

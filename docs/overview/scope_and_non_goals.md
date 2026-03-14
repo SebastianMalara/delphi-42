@@ -12,9 +12,9 @@
 
 - Single-node deployment on Raspberry Pi
 - One Meshtastic-connected oracle process handling direct messages
-- Commands: `help`, `where`, `pos`, and `ask <question>`
-- Offline corpus preparation into a local SQLite FTS index
-- Hybrid archive design: Kiwix for browsing plus a separate local retrieval index derived from curated content
+- Commands: `?help`, `?where`, `?pos`, `?ask <question>`, and `?chat <message>`
+- Allowlisted `.zim` archives as the grounded runtime corpus
+- Hybrid archive design: Kiwix for browsing plus direct `.zim` retrieval for answers
 - Retrieval-first answer generation through the AX8850-backed local `StackFlow` API or deterministic fallback
 - Hotspot-based access to a larger local archive
 - Repeatable runbooks for provision, deploy, recover, and validate

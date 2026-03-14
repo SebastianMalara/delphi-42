@@ -18,7 +18,7 @@ Runtime flows center on three repeatable behaviors: direct-message answering, pr
 - Meshtastic radio
 - `bot` service
 - `core` service logic
-- SQLite FTS index
+- allowlisted `.zim` archives
 - StackFlow OpenAI-compatible API
 - deterministic packet formatter
 - operator-triggered ingest command
@@ -27,8 +27,7 @@ Runtime flows center on three repeatable behaviors: direct-message answering, pr
 
 - DM commands and private reply channel
 - `python -m bot.oracle_bot`
-- `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...`
-- `python -m ingest.build_index --input-dir ... --db ...`
+- `python -m scripts.inspect_retrieval --config ... --question ...`
 - `systemd` service boundaries
 
 ## Data/Control Flow
@@ -41,22 +40,21 @@ sequenceDiagram
   participant Mesh as Meshtastic Mesh
   participant Bot as bot
   participant Core as oracle_service
-  participant Index as SQLite FTS
-  participant Zim as Runtime ZIM Fallback
+  participant Index as Allowlisted .zim
   participant LLM as StackFlow API
 
-  User->>Mesh: DM "ask how to purify water"
+  User->>Mesh: DM "?ask how to purify water"
   Mesh->>Bot: inbound private packet
   Bot->>Core: ParsedCommand(name="ask", argument=...)
-  Core->>Index: search(question)
-  Index-->>Core: top context chunks
-  alt SQLite miss and ZIM fallback enabled
-    Core->>Zim: search allowlisted .zim archives
-    Zim-->>Core: top fallback chunks
-  end
-  Core->>LLM: grounded prompt requesting short and extended drafts
-  LLM-->>Core: grounded answer draft
-  Core->>Core: deterministic packet formatting
+  Core->>Index: search allowlisted .zim archives
+  Index-->>Core: top grounded context chunks
+  Core->>LLM: grounded full-answer prompt
+  LLM-->>Core: grounded full answer
+  Core->>LLM: condensed continuation prompt
+  LLM-->>Core: condensed continuation answer
+  Core->>LLM: ultra-short first-packet prompt
+  LLM-->>Core: ultra-short first packet
+  Core->>Core: prefix-aware packet formatting and shrink validation
   Core-->>Bot: OracleReply(bundle)
   Bot-->>Mesh: private short answer
   Bot-->>Mesh: optional continuation packets
@@ -71,7 +69,7 @@ sequenceDiagram
   participant Bot as bot
   participant Core as oracle_service
 
-  User->>Mesh: DM "where"
+	  User->>Mesh: DM "?where"
   Mesh->>Bot: inbound private packet
   Bot->>Core: ParsedCommand(name="where")
   Core-->>Bot: OracleReply(text, share_position=true)
@@ -79,35 +77,32 @@ sequenceDiagram
   Bot-->>Mesh: private position packet
 ```
 
-### Ingest Flow
+### Chat Flow
 
 ```mermaid
 sequenceDiagram
   participant Operator
-  participant Extract as extract_zim
-  participant Ingest as build_index
-  participant Corpus as ZIM/Plaintext Source
-  participant DB as SQLite FTS
+  participant Memory as Chat Memory
+  participant LLM as StackFlow API
 
-  Operator->>Extract: run extract_zim
-  Extract->>Corpus: read allowlisted .zim archives
-  Extract-->>Operator: staged plaintext output
-  Operator->>Ingest: run build_index
-  Ingest->>Corpus: load staged plaintext
-  Ingest->>Ingest: chunk content
-  Ingest->>DB: rebuild chunks index
-  DB-->>Ingest: success/failure
-  Ingest-->>Operator: index build result
+  User->>Mesh: DM "?chat keep me company"
+  Mesh->>Bot: inbound private packet
+  Bot->>Core: ParsedCommand(name="chat", argument=...)
+  Core->>Memory: load short sender history
+  Core->>LLM: chat prompt with bounded history
+  LLM-->>Core: chat reply
+  Core->>Memory: store user turn + condensed reply
+  Core-->>Bot: OracleReply(bundle)
+  Bot-->>Mesh: private chat answer
 ```
 
 ## Failure Modes
 
-- Ask flow returns no answer because index is empty or the StackFlow service or model package is unavailable
+- Ask flow returns no answer because the allowlisted archives are missing or retrieval is weak
 - Ask flow overruns radio limits unless packet formatting is deterministic
-- Ask flow never reaches `.zim` fallback because curated ZIM files are missing or misconfigured
+- Ask flow never reaches usable grounded context because the allowlisted `.zim` files are missing or misconfigured
 - Where flow leaks publicly if routing ignores DM-only policy
-- Ingest rebuild erases useful data without replacement if source directory is incomplete
-- Kiwix browse content is refreshed without rebuilding the derived retrieval index
+- Chat flow loses continuity if per-sender memory is reset
 
 ## Security/Privacy Constraints
 

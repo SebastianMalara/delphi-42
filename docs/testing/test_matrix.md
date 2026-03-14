@@ -58,16 +58,16 @@ Evidence references should point to test logs, checklists, or field notes record
 | TM-011 | privacy-safe logging behavior | System | Pi bench | Ops Lead | log review |
 | TM-012 | end-to-end ask flow over mesh | Field | controlled field site | QA Lead | field acceptance transcript |
 | TM-013 | low-power event triggers graceful shutdown or reduced-service mode | System | Pi bench | Ops Lead | power management test note |
-| TM-014 | Kiwix/ZIM refresh followed by index rebuild preserves answerability | System | Pi bench | Ops Lead | upgrade drill note |
+| TM-014 | Kiwix/ZIM refresh preserves answerability for the allowlisted runtime archives | System | Pi bench | Ops Lead | upgrade drill note |
 | TM-015 | StackFlow `/v1/models` preflight passes before `oracle-bot` start | Integration | Pi bench | Ops Lead | provisioning validation log |
 | TM-016 | missing local model service or model package degrades to deterministic answers | Unit | local dev | AI Lead | `pytest` output |
-| TM-017 | runtime `.zim` fallback triggers only after SQLite misses and stays bounded to the allowlist | Unit | local dev | AI Lead | `pytest` output |
-| TM-018 | `extract_zim` writes normalized plaintext from allowlisted archives | Unit | local dev | AI Lead | `pytest` output |
-| TM-019 | `compose.dev` starts `oracle-app`, `oracle-indexer`, and `mock-openai` with a working sample corpus | Integration | local dev | Software Lead | compose smoke log |
+| TM-017 | allowlisted `.zim` retrieval stays bounded to the configured archives and fails closed on weak matches | Unit | local dev | AI Lead | `pytest` output |
+| TM-018 | multi-pass packet generation keeps the first packet semantically aligned with the continuation packets | Unit | local dev | AI Lead | `pytest` output |
+| TM-019 | `compose.dev` starts `oracle-app` and `mock-openai` with a working allowlisted archive mount | Integration | local dev | Software Lead | compose smoke log |
 | TM-020 | `oracle-app` in Pi Compose can reach host `llm-openai-api` through the configured host alias | System | Pi bench | Ops Lead | container networking note |
-| TM-021 | simulated radio console can exercise `help`, `where`, and `ask` without hardware | Integration | local dev | Software Lead | console smoke note |
+| TM-021 | simulated radio console can exercise `?help`, `?where`, `?ask`, and `?chat` without hardware | Integration | local dev | Software Lead | console smoke note |
 | TM-022 | Mac preflight succeeds against LM Studio, the configured model id, and a real completion probe | Integration | local dev | Software Lead | preflight output |
 | TM-023 | Mac-native simulated lane answers with LM Studio over the OpenAI-compatible API | Integration | local dev | AI Lead | M1 quickstart smoke note |
-| TM-024 | Mac-native runtime `.zim` fallback works on a real allowlisted archive after a forced SQLite miss | System | local dev | AI Lead | M1 `.zim` validation note |
+| TM-024 | Mac-native allowlisted `.zim` retrieval works on a real archive without any separate index build | System | local dev | AI Lead | M1 `.zim` validation note |
 | TM-025 | Mac-native supervised live T114 lane exchanges DMs over USB serial, ignores public traffic, and survives no-fix position requests | System | local dev | Software Lead | M1 live-mesh note |
 | TM-026 | Ubuntu OVMS host preflight succeeds with provider `ovms`, `/v3/models`, and a real completion probe | Integration | local dev | Software Lead | OVMS preflight output |

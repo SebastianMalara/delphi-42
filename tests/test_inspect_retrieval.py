@@ -3,24 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-from ingest.build_index import SQLiteIndexBuilder, build_chunks
-from ingest.zim_extract import ExtractedDocument
+from core.retriever import KeywordRetriever, RetrievalChunk
 from scripts.inspect_retrieval import main
 
 
-def test_inspect_retrieval_reports_selected_context(tmp_path: Path, capsys) -> None:
-    index_path = tmp_path / "data/index/oracle.db"
-    SQLiteIndexBuilder(index_path).build(
-        build_chunks(
-            [
-                ExtractedDocument(
-                    title="Water Purification",
-                    source_id="water.txt",
-                    text="Boil water for one minute before drinking.",
-                )
-            ]
-        )
-    )
+def test_inspect_retrieval_reports_selected_context(tmp_path: Path, capsys, monkeypatch) -> None:
+    zim_dir = tmp_path / "data/library/zim"
+    zim_dir.mkdir(parents=True)
+    (zim_dir / "medicine.zim").write_bytes(b"zim")
 
     config_path = tmp_path / "oracle.yaml"
     config_path.write_text(
@@ -29,14 +19,27 @@ radio:
   transport: simulated
   device: ""
 knowledge:
-  plaintext_dir: data/library/plaintext
-  index_path: {index_path}
-  zim_dir: data/library/zim
-  runtime_zim_fallback_enabled: false
+  zim_dir: {zim_dir}
+  zim_allowlist:
+    - medicine.zim
 llm:
   backend: deterministic
 """.strip(),
         encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "scripts.inspect_retrieval.KiwixRetriever",
+        lambda *args, **kwargs: KeywordRetriever(
+            [
+                RetrievalChunk(
+                    title="Water Purification",
+                    source="medicine.zim:A/WaterPurification.html",
+                    snippet="Boil water for one minute before drinking.",
+                    matched_terms=2,
+                )
+            ]
+        ),
     )
 
     argv = sys.argv
@@ -55,5 +58,5 @@ llm:
     output = capsys.readouterr().out
     assert "anchor_terms: purify, water" in output
     assert "confidence: strong" in output
-    assert "source: sqlite" in output
+    assert "source: kiwix" in output
     assert "Water Purification" in output

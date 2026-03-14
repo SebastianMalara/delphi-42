@@ -1,99 +1,54 @@
 from pathlib import Path
 
-import pytest
-
-from core.retriever import RetrievalChunk, RetrievalConfidence, SQLiteRetriever, assess_retrieval
-from ingest.build_index import SQLiteIndexBuilder, build_chunks
-from ingest.zim_extract import ExtractedDocument
+from core.retriever import KiwixRetriever, RetrievalConfidence, assess_retrieval
 
 
-def test_sqlite_retriever_reads_generated_index(tmp_path: Path) -> None:
-    documents = [
-        ExtractedDocument(
-            title="Water Purification",
-            source_id="water.txt",
-            text="Boil water for one minute before drinking.\n\nStore clean water safely.",
-        )
-    ]
-    chunks = build_chunks(documents)
-    db_path = tmp_path / "oracle.db"
-    SQLiteIndexBuilder(db_path).build(chunks)
+def test_kiwix_retriever_reads_allowlisted_articles() -> None:
+    article_map = {
+        ("medical.zim", "A/WaterPurification.html"): (
+            "Boil water for one minute before drinking. "
+            "Let it cool in a clean container."
+        ),
+    }
 
-    results = SQLiteRetriever(db_path).search("how do i purify water")
+    def search_fn(zim_file_path: str, search_string: str):
+        assert "medical.zim" in zim_file_path
+        assert "purify water" in search_string
+        return 1, ["A/WaterPurification.html"]
 
-    assert len(results) == 1
-    assert results[0].title == "Water Purification"
-    assert results[0].source == "water.txt"
+    def read_fn(zim_file_path: str, article_path: str):
+        return article_map[(Path(zim_file_path).name, article_path)]
+
+    results = KiwixRetriever(
+        Path("/unused"),
+        ("medical.zim",),
+        search_fn=search_fn,
+        read_fn=read_fn,
+    ).search("how do i purify water", limit=3)
+
+    assert results
+    assert results[0].source == "medical.zim:A/WaterPurification.html"
     assert "Boil water" in results[0].snippet
-    assert results[0].matched_terms >= 1
-
-
-def test_sqlite_retriever_requires_existing_index(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        SQLiteRetriever(tmp_path / "missing.db")
-
-
-def test_sqlite_retriever_ignores_stopword_only_candidates(tmp_path: Path) -> None:
-    documents = [
-        ExtractedDocument(
-            title="Water Purification",
-            source_id="water.txt",
-            text="Boil water for one minute before drinking.",
-        ),
-        ExtractedDocument(
-            title="Transit Notes",
-            source_id="notes.txt",
-            text="To travel at dawn, move light and stay aware.",
-        ),
-    ]
-    db_path = tmp_path / "oracle.db"
-    SQLiteIndexBuilder(db_path).build(build_chunks(documents))
-
-    results = SQLiteRetriever(db_path).search("how to purify water")
-
-    assert len(results) == 1
-    assert results[0].source == "water.txt"
-
-
-def test_sqlite_retriever_uses_exact_token_overlap_not_substrings(tmp_path: Path) -> None:
-    documents = [
-        ExtractedDocument(
-            title="Alarm Signals",
-            source_id="alarm.txt",
-            text="An alarm warns nearby teams.",
-        ),
-        ExtractedDocument(
-            title="Broken Arm",
-            source_id="arm.txt",
-            text="Immobilize the arm with a splint and sling.",
-        ),
-    ]
-    db_path = tmp_path / "oracle.db"
-    SQLiteIndexBuilder(db_path).build(build_chunks(documents))
-
-    results = SQLiteRetriever(db_path).search("how to stabilize broken arm")
-
-    assert len(results) == 1
-    assert results[0].source == "arm.txt"
 
 
 def test_assess_retrieval_rejects_ambiguous_wound_query() -> None:
-    chunks = [
-        RetrievalChunk(
-            title="Negative-pressure wound therapy",
-            snippet="Negative-pressure wound therapy may support wound closure in supervised settings.",
-            source="npwt.txt",
-        ),
-        RetrievalChunk(
-            title="Compartment syndrome",
-            snippet="Compartment syndrome requires urgent evaluation and pressure relief.",
-            source="compartment.txt",
-        ),
-    ]
+    retriever = KiwixRetriever(
+        Path("/unused"),
+        ("medical.zim",),
+        search_fn=lambda *_: (2, ["A/WoundClosure.html", "A/CompartmentSyndrome.html"]),
+        read_fn=lambda _, article_path: {
+            "A/WoundClosure.html": (
+                "Negative-pressure wound therapy may support wound closure in supervised settings."
+            ),
+            "A/CompartmentSyndrome.html": (
+                "Compartment syndrome requires urgent evaluation and pressure relief."
+            ),
+        }[article_path],
+    )
 
     assessment = assess_retrieval(
         "how to treat a wound it's not closing, I'm alone in the woods",
-        chunks,
+        retriever.search("how to treat a wound it's not closing, I'm alone in the woods", limit=6),
     )
 
     assert assessment.confidence is RetrievalConfidence.WEAK

@@ -17,7 +17,7 @@ flowchart LR
   User["Field User"] -->|Direct message| Mesh["Meshtastic Mesh"]
   Mesh --> Radio["Meshtastic Radio"]
   Radio --> Node["Delphi-42 Node"]
-  Node --> Index["SQLite FTS Index"]
+  Node --> Index["Allowlisted .zim Archives"]
   Node --> LLM["Local LLM Runtime"]
   Node --> Kiwix["Kiwix Archive"]
   User -->|Join hotspot| Hotspot["WiFi Hotspot"]
