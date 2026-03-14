@@ -21,6 +21,29 @@ class StructuredRunner:
         )
 
 
+class CollapsedStructuredRunner:
+    def generate(self, prompt: str) -> AnswerDraft:
+        return AnswerDraft(
+            short_answer="Use portable water purification devices.",
+            extended_answer="Use portable water purification devices.",
+        )
+
+
+class CollapsedStructuredThenLongRunner:
+    def generate(self, prompt: str) -> AnswerDraft:
+        return AnswerDraft(
+            short_answer="Use portable water purification devices.",
+            extended_answer="Use portable water purification devices.",
+        )
+
+    def generate_long_answer(self, prompt: str) -> str:
+        return (
+            "Use portable water purification devices. "
+            "Filter cloudy water first if the device requires clear input. "
+            "Then follow the treatment steps exactly and store the water in a clean container."
+        )
+
+
 class StaticRetriever:
     def __init__(self, chunks: list[RetrievalChunk]) -> None:
         self.chunks = chunks
@@ -213,3 +236,63 @@ def test_model_long_answer_fallback_recovers_from_unstructured_output() -> None:
     assert len(reply.packets) >= 2
     assert reply.packets[0] == "Clean the wound."
     assert any("sterile dressing" in packet for packet in reply.packets[1:])
+
+
+def test_collapsed_structured_answer_uses_long_answer_recovery() -> None:
+    retriever = KeywordRetriever(
+        [
+            RetrievalChunk(
+                title="Water Purification",
+                snippet=(
+                    "Use portable water purification devices when boiling is not practical. "
+                    "Filter cloudy water first if the device requires clear input. "
+                    "Then follow the treatment steps exactly and store the water in a clean container."
+                ),
+                source="medical.zim:A/WaterPurification.html",
+            )
+        ]
+    )
+    reply = OracleService(
+        retriever=retriever,
+        llm=CollapsedStructuredThenLongRunner(),
+        reply_config=ReplyConfig(
+            short_max_chars=40,
+            continuation_max_chars=70,
+            max_continuation_packets=3,
+        ),
+    ).handle(ParsedCommand(name="ask", argument="how to purify water"))
+
+    assert reply.mode is ReplyMode.MODEL_LONG_FALLBACK
+    assert len(reply.packets) >= 2
+    assert reply.packets[0] == "Use portable water purification devices."
+    assert any("Filter cloudy water first" in packet for packet in reply.packets[1:])
+
+
+def test_collapsed_structured_answer_uses_deterministic_context_recovery() -> None:
+    retriever = KeywordRetriever(
+        [
+            RetrievalChunk(
+                title="Water Purification",
+                snippet=(
+                    "Use portable water purification devices when boiling is not practical. "
+                    "Filter cloudy water first if the device requires clear input. "
+                    "Then follow the treatment steps exactly and store the water in a clean container."
+                ),
+                source="medical.zim:A/WaterPurification.html",
+            )
+        ]
+    )
+    reply = OracleService(
+        retriever=retriever,
+        llm=CollapsedStructuredRunner(),
+        reply_config=ReplyConfig(
+            short_max_chars=40,
+            continuation_max_chars=70,
+            max_continuation_packets=3,
+        ),
+    ).handle(ParsedCommand(name="ask", argument="how to purify water"))
+
+    assert reply.mode is ReplyMode.DETERMINISTIC_FALLBACK
+    assert len(reply.packets) >= 2
+    assert reply.packets[0] == "Use portable water purification..."
+    assert any("Filter cloudy water first" in packet for packet in reply.packets[1:])

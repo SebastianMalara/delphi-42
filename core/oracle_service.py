@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 from bot.command_parser import HELP_TEXT, ParsedCommand
 
@@ -137,9 +138,17 @@ class OracleService:
         if self.llm is not None:
             try:
                 draft = self.llm.generate(prompt)
+                packets = self._format_packets(draft)
+                mode = ReplyMode.MODEL
+                if len(packets) == 1 and self._context_supports_continuation(context):
+                    richer_draft, richer_mode = self._recover_richer_answer(question, context)
+                    if richer_draft is not None and richer_mode is not None:
+                        draft = richer_draft
+                        packets = self._format_packets(draft)
+                        mode = richer_mode
                 return OracleReply(
-                    packets=self._format_packets(draft),
-                    mode=ReplyMode.MODEL,
+                    packets=packets,
+                    mode=mode,
                     retrieval_hits=retrieval_hits,
                     retrieval_source=retrieval_source,
                     retrieval_sources=self._retrieval_sources(context),
@@ -147,11 +156,11 @@ class OracleService:
                     retrieval_scores=self._retrieval_scores(context),
                 )
             except ModelExecutionError:
-                fallback_draft = self._long_answer_model_fallback(question, context)
-                if fallback_draft is not None:
+                fallback_draft, fallback_mode = self._recover_richer_answer(question, context)
+                if fallback_draft is not None and fallback_mode is not None:
                     return OracleReply(
                         packets=self._format_packets(fallback_draft),
-                        mode=ReplyMode.MODEL_LONG_FALLBACK,
+                        mode=fallback_mode,
                         retrieval_hits=retrieval_hits,
                         retrieval_source=retrieval_source,
                         retrieval_sources=self._retrieval_sources(context),
@@ -200,6 +209,75 @@ class OracleService:
             continuation_max_chars=self.reply_config.continuation_max_chars,
             max_continuation_packets=self.reply_config.max_continuation_packets,
         )
+
+    def _recover_richer_answer(
+        self,
+        question: str,
+        context: list[RetrievalChunk],
+    ) -> tuple[AnswerDraft | None, ReplyMode | None]:
+        model_draft = self._long_answer_model_fallback(question, context)
+        if model_draft is not None and len(self._format_packets(model_draft)) > 1:
+            return model_draft, ReplyMode.MODEL_LONG_FALLBACK
+
+        deterministic_draft = self._deterministic_context_draft(context)
+        if deterministic_draft is not None and len(self._format_packets(deterministic_draft)) > 1:
+            return deterministic_draft, ReplyMode.DETERMINISTIC_FALLBACK
+
+        if model_draft is not None:
+            return model_draft, ReplyMode.MODEL_LONG_FALLBACK
+
+        return None, None
+
+    def _context_supports_continuation(self, context: list[RetrievalChunk]) -> bool:
+        draft = self._deterministic_context_draft(context)
+        if draft is None:
+            return False
+        return len(self._format_packets(draft)) > 1
+
+    def _deterministic_context_draft(
+        self,
+        context: list[RetrievalChunk],
+    ) -> AnswerDraft | None:
+        if not context:
+            return None
+
+        max_chars = self.reply_config.continuation_max_chars * max(
+            self.reply_config.max_continuation_packets,
+            1,
+        )
+        sentences: list[str] = []
+        seen: set[str] = set()
+        total_chars = 0
+
+        for chunk in context[: self.retrieval_limit]:
+            for sentence in re.split(r"(?<=[.!?])\s+", chunk.snippet):
+                normalized = " ".join(sentence.strip().split())
+                if not normalized:
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                projected = total_chars + len(normalized) + (1 if sentences else 0)
+                if sentences and projected > max_chars:
+                    break
+                seen.add(key)
+                sentences.append(normalized)
+                total_chars = projected
+            if sentences and total_chars >= max_chars:
+                break
+
+        if not sentences:
+            return None
+
+        extended_answer = " ".join(sentences)
+        short_answer = derive_short_answer(
+            extended_answer,
+            max_chars=self.reply_config.short_max_chars,
+        )
+        if not short_answer:
+            return None
+
+        return AnswerDraft(short_answer=short_answer, extended_answer=extended_answer)
 
     def _long_answer_model_fallback(
         self,
