@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SUPPORTED_COMMANDS = {"help", "where", "pos", "ask"}
+SUPPORTED_COMMANDS = {"help", "where", "pos", "ask", "chat", "mesh"}
 
 HELP_TEXT = """Commands:
-help
-where
-pos
-ask <question>
+?help
+?where
+?pos
+?ask <question>
+?chat <message>
+?mesh
+
+Examples:
+?ask how to purify water
+?chat keep me company
+?mesh
 """
 
 
@@ -24,17 +31,19 @@ def parse_command(message: str) -> ParsedCommand:
     if not text:
         return ParsedCommand(name="help")
 
+    if not text.startswith("?"):
+        return ParsedCommand(name="help")
+
     head, _, tail = text.partition(" ")
-    command = head.lower()
+    command = head[1:].lower()
     argument = tail.strip() or None
 
-    if command in {"help", "where", "pos"}:
+    if command in {"help", "where", "pos", "mesh"}:
         return ParsedCommand(name=command)
 
-    if command == "ask":
+    if command in {"ask", "chat"}:
         if argument is None:
             return ParsedCommand(name="help")
-        return ParsedCommand(name="ask", argument=argument)
+        return ParsedCommand(name=command, argument=argument)
 
-    # Plain text is treated as an implicit ask request to keep the UX simple.
-    return ParsedCommand(name="ask", argument=text)
+    return ParsedCommand(name="help")

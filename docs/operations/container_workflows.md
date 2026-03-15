@@ -13,7 +13,7 @@
 The default development path is:
 
 1. start the portable services with Compose
-2. build the local SQLite index from the repo-tracked sample corpus
+2. stage allowlisted `.zim` files under `data/library/zim`
 3. run the app against simulated radio
 4. inspect outbound packets through the dev console
 

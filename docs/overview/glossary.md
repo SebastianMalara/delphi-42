@@ -25,6 +25,6 @@
 - Oracle Broadcast: Short public message advertising the node's presence.
 - Prototype v1: The first complete, documented, field-testable version defined by this suite.
 - Retrieval: The process of selecting local passages relevant to a question.
-- SQLite FTS: SQLite full-text search index used for local text lookup.
+- Kiwix-backed Retrieval: Runtime `.zim` search and article reads used for local text lookup.
 - StackFlow: The M5 software stack and host services used to expose AX8850-backed local model inference on Debian 12.
 - ZIM: Archived content format commonly used for offline web and encyclopedia datasets.

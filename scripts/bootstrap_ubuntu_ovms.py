@@ -8,14 +8,22 @@ import textwrap
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from urllib import request
 from urllib.parse import urlparse
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.manage_zims import answer_enabled_aliases
+else:
+    from scripts.manage_zims import answer_enabled_aliases
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = REPO_ROOT / "artifacts/ubuntu-ovms"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v3"
-DEFAULT_MODEL = "OpenVINO/Phi-3.5-mini-instruct-int4-ov"
+DEFAULT_KIWIX_URL = "http://127.0.0.1:8080"
+DEFAULT_MODEL = "OpenVINO/Qwen3-8B-int4-ov"
 DEFAULT_ZIM_ALIAS = "medicine.zim"
 DEFAULT_ZIM_PROFILE = "nopic"
 DEFAULT_T114_SYMLINK = Path("/dev/delphi-t114")
@@ -37,9 +45,7 @@ class BootstrapPaths:
     venv_dir: Path
     config_dir: Path
     bin_dir: Path
-    index_dir: Path
     library_dir: Path
-    plaintext_dir: Path
     zim_dir: Path
     zim_releases_dir: Path
     models_dir: Path
@@ -63,6 +69,7 @@ class BootstrapState:
     archive_alias: str
     llm_model: str
     llm_base_url: str
+    kiwix_url: str
     radio_device: str
     generated_at: str
 
@@ -74,9 +81,7 @@ def build_paths(root: Path) -> BootstrapPaths:
         venv_dir=root / "venv",
         config_dir=root / "config",
         bin_dir=root / "bin",
-        index_dir=root / "index",
         library_dir=root / "library",
-        plaintext_dir=root / "library/plaintext",
         zim_dir=root / "library/zim",
         zim_releases_dir=root / "library/zim/releases",
         models_dir=root / "models",
@@ -103,6 +108,7 @@ def load_state(root: Path) -> BootstrapState | None:
             or DEFAULT_ZIM_ALIAS,
             llm_model=str(raw["llm_model"]).strip(),
             llm_base_url=str(raw["llm_base_url"]).strip(),
+            kiwix_url=str(raw.get("kiwix_url", DEFAULT_KIWIX_URL)).strip() or DEFAULT_KIWIX_URL,
             radio_device=str(raw["radio_device"]).strip(),
             generated_at=str(raw["generated_at"]).strip(),
         )
@@ -196,11 +202,13 @@ def render_runtime_artifacts(
     *,
     archive: ResolvedArchive,
     base_url: str,
+    kiwix_url: str,
     model: str,
     radio_device: Path,
 ) -> dict[str, str]:
     paths = build_paths(root)
     _ensure_runtime_directories(paths)
+    allowlist = answer_enabled_aliases(root) or (archive.alias,)
 
     sim_config_path = paths.config_dir / "oracle.ubuntu.ovms.sim.local.yaml"
     live_config_path = paths.config_dir / "oracle.ubuntu.ovms.live.local.yaml"
@@ -210,11 +218,10 @@ def render_runtime_artifacts(
             radio_transport="simulated",
             radio_device="",
             base_url=base_url,
+            kiwix_url=kiwix_url,
             model=model,
-            index_path=paths.index_dir / "oracle-ubuntu-ovms.db",
-            plaintext_dir=paths.plaintext_dir,
             zim_dir=paths.zim_dir,
-            zim_alias=archive.alias,
+            zim_aliases=allowlist,
         ),
         encoding="utf-8",
     )
@@ -224,17 +231,23 @@ def render_runtime_artifacts(
             radio_transport="meshtastic",
             radio_device=str(radio_device),
             base_url=base_url,
+            kiwix_url=kiwix_url,
             model=model,
-            index_path=paths.index_dir / "oracle-ubuntu-ovms.db",
-            plaintext_dir=paths.plaintext_dir,
             zim_dir=paths.zim_dir,
-            zim_alias=archive.alias,
+            zim_aliases=allowlist,
         ),
         encoding="utf-8",
     )
 
     helper_paths = _write_helper_scripts(paths, sim_config_path, live_config_path)
-    _write_state(paths, archive=archive, base_url=base_url, model=model, radio_device=radio_device)
+    _write_state(
+        paths,
+        archive=archive,
+        base_url=base_url,
+        kiwix_url=kiwix_url,
+        model=model,
+        radio_device=radio_device,
+    )
 
     return {
         "root": str(paths.root),
@@ -259,8 +272,6 @@ def _ensure_runtime_directories(paths: BootstrapPaths) -> None:
         paths.root,
         paths.config_dir,
         paths.bin_dir,
-        paths.index_dir,
-        paths.plaintext_dir,
         paths.zim_dir,
         paths.zim_releases_dir,
         paths.models_dir,
@@ -274,6 +285,7 @@ def _write_state(
     *,
     archive: ResolvedArchive,
     base_url: str,
+    kiwix_url: str,
     model: str,
     radio_device: Path,
 ) -> None:
@@ -284,6 +296,7 @@ def _write_state(
         archive_alias=archive.alias,
         llm_model=model,
         llm_base_url=base_url,
+        kiwix_url=kiwix_url,
         radio_device=str(radio_device),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -356,11 +369,10 @@ def _config_text(
     radio_transport: str,
     radio_device: str,
     base_url: str,
+    kiwix_url: str,
     model: str,
-    index_path: Path,
-    plaintext_dir: Path,
     zim_dir: Path,
-    zim_alias: str,
+    zim_aliases: tuple[str, ...],
 ) -> str:
     is_live_radio = radio_transport == "meshtastic"
     radio_spacing = 8.0 if is_live_radio else 0.0
@@ -368,7 +380,8 @@ def _config_text(
     radio_retry_delay = 15.0 if is_live_radio else 0.0
     radio_payload_bytes = 120 if is_live_radio else 0
     short_max_chars = 100 if is_live_radio else 120
-    continuation_max_chars = 120 if is_live_radio else 600
+    condensed_max_chars = 600
+    allowlist_block = "\n".join(f"            - {alias}" for alias in zim_aliases)
     return textwrap.dedent(
         f"""\
         node_name: {node_name}
@@ -394,14 +407,11 @@ def _config_text(
             - SEEK WISDOM IN PRIVATE.
 
         knowledge:
-          plaintext_dir: {_yaml_string(str(plaintext_dir))}
-          index_path: {_yaml_string(str(index_path))}
-          kiwix_url: http://127.0.0.1:8080
+          kiwix_url: {_yaml_string(kiwix_url)}
           zim_dir: {_yaml_string(str(zim_dir))}
-          runtime_zim_fallback_enabled: true
-          runtime_zim_allowlist:
-            - {zim_alias}
-          runtime_zim_search_limit: 3
+          zim_allowlist:
+{allowlist_block}
+          zim_search_limit: 3
 
         llm:
           backend: openai-compatible
@@ -413,8 +423,12 @@ def _config_text(
 
         reply:
           short_max_chars: {short_max_chars}
-          continuation_max_chars: {continuation_max_chars}
-          max_continuation_packets: 3
+          condensed_max_chars: {condensed_max_chars}
+          max_total_packets: 7
+          ask_min_total_packets: 5
+          ask_max_total_packets: 7
+          chat_min_total_packets: 2
+          chat_max_total_packets: 4
 
         wifi:
           ssid: DELPHI-42-OVMS
@@ -464,6 +478,7 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("--archive-filename", required=True)
     render_parser.add_argument("--archive-url", required=True)
     render_parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    render_parser.add_argument("--kiwix-url", default=DEFAULT_KIWIX_URL)
     render_parser.add_argument("--model", default=DEFAULT_MODEL)
     render_parser.add_argument("--radio-device", required=True)
 
@@ -505,6 +520,7 @@ def main() -> None:
                 args.root,
                 archive=archive,
                 base_url=args.base_url,
+                kiwix_url=args.kiwix_url,
                 model=args.model,
                 radio_device=radio_device,
             )

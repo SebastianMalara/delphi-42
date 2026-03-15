@@ -17,7 +17,7 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 - Meshtastic DM interface
 - YAML configuration
 - local service entrypoints
-- persistent data directories for corpora, indexes, and models
+- persistent data directories for archives and models
 
 ## Interfaces
 
@@ -25,10 +25,11 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 
 | Command | Meaning | Expected Result |
 | --- | --- | --- |
-| `help` | List supported actions | Text help response |
-| `where` | Ask for private node location | Text confirmation plus private position packet |
-| `pos` | Alias for location request | Same as `where` |
-| `ask <question>` | Ask the oracle a question | Ultra-short grounded answer plus optional bounded continuation or grounded-failure response |
+| `?help` | List supported actions | Text help response |
+| `?where` | Ask for private node location | Text confirmation plus private position packet |
+| `?pos` | Alias for location request | Same as `?where` |
+| `?ask <question>` | Ask the oracle a question | Ultra-short grounded answer plus bounded continuation or grounded-failure response |
+| `?chat <message>` | Talk to the bot without retrieval | Short conversational reply plus optional continuation |
 
 ### Local Entry Points
 
@@ -39,8 +40,6 @@ Prototype v1 exposes a deliberately small interface surface: a few DM commands, 
 | `python -m scripts.host_preflight --config ...` | Validate host-native OpenAI-compatible runtime, `.zim`, and Meshtastic environment |
 | `python -m scripts.mac_preflight --config ...` | Compatibility wrapper for the Mac-native LM Studio lane |
 | `python -m scripts.inspect_retrieval --config ... --question ...` | Inspect anchor terms, retrieval confidence, selected source, and answer policy for one question |
-| `python -m ingest.extract_zim --zim-dir ... --output-dir ... --allowlist ...` | Export curated `.zim` content into staged plaintext |
-| `python -m ingest.build_index --input-dir ... --db ...` | Build or rebuild the SQLite FTS index |
 
 ### Config Schema
 
@@ -52,9 +51,9 @@ Current config keys from `config/oracle.example.yaml`:
 | `radio` | `transport`, `device`, `channel`, `text_packet_spacing_seconds`, `text_packet_retry_attempts`, `text_packet_retry_delay_seconds`, `max_text_payload_bytes` | Radio transport, device path, pacing, retry policy, and safe text payload ceiling |
 | `privacy` | `answer_public_messages`, `share_position_publicly` | Safety flags that should stay `false` in Prototype v1 |
 | `broadcasts` | `interval_minutes`, `messages` | Public discovery behavior |
-| `knowledge` | `plaintext_dir`, `index_path`, `kiwix_url`, `zim_dir`, `runtime_zim_fallback_enabled`, `runtime_zim_allowlist`, `runtime_zim_search_limit` | Corpus, index, browse-archive locations, and bounded runtime `.zim` fallback policy |
+| `knowledge` | `kiwix_url`, `zim_dir`, `zim_allowlist`, `zim_search_limit` | Browse-archive location and allowlisted runtime `.zim` retrieval inputs |
 | `llm` | `backend`, `provider`, `base_url`, `model`, `api_key`, `timeout_seconds` | OpenAI-compatible local model runtime settings |
-| `reply` | `short_max_chars`, `continuation_max_chars`, `max_continuation_packets` | Deterministic packet contract enforced in application logic |
+| `reply` | `short_max_chars`, `condensed_max_chars`, `max_total_packets` | Multi-pass reply targets enforced in application logic |
 | `wifi` | `ssid` | Local hotspot name |
 
 Current implementation note:
@@ -76,9 +75,7 @@ Current implementation note:
 | Service | Trigger | Responsibility |
 | --- | --- | --- |
 | `oracle-app` | long-running container | Run the bot process in Compose |
-| `oracle-indexer` | oneshot container | Rebuild the local index from plaintext |
 | `oracle-bot.service` | long-running host service | Legacy host-managed bot wrapper for non-container Pi deployments |
-| `oracle-core.service` | oneshot/manual or scheduled | Legacy host-managed index rebuild wrapper |
 | `kiwix` | container or host service | Expose mounted `.zim` files over local HTTP |
 | `llm-openai-api.service` | host service | Expose the AX8850-backed local chat and model endpoints on loopback |
 
@@ -94,19 +91,15 @@ Current implementation note:
 | `config/oracle.ubuntu.ovms.sim.yaml` | host-native Ubuntu OVMS simulated-radio config |
 | `config/oracle.ubuntu.ovms.live.yaml` | host-native Ubuntu OVMS live-radio config |
 | `compose.yaml`, `compose.dev.yaml`, `compose.pi.yaml` | portable runtime packaging and environment overlays |
-| `sample_data/plaintext` | repo-tracked sample corpus for local development |
-| `data/library/plaintext` | staged plaintext corpus |
 | `data/library/zim` | optional staged ZIM files or archive source mount |
-| `data/index/oracle.db` | generated SQLite FTS database |
 | host package state | provider-specific runtime packages and installed model packages managed outside the app |
 
 ## Data/Control Flow
 
 - Operators modify config and stage data directories.
 - Services read config and data paths at runtime.
-- `ingest` writes the index that `core` later reads.
-- Kiwix serves the larger archive independently from the answer-time index.
-- Allowlisted `.zim` files can be searched directly as a secondary retrieval source when the indexed corpus misses.
+- Kiwix serves the larger archive independently from the answer-time retrieval calls.
+- Allowlisted `.zim` files are the only grounded retrieval source at runtime.
 - Meshtastic text answers are paced and retried in application logic, and live profiles enforce a radio-safe payload envelope.
 - `bot` exposes the user-facing command interface through Meshtastic.
 
@@ -116,9 +109,8 @@ Current implementation note:
 - `radio.transport` does not match the intended environment
 - Operators enable unsafe privacy flags
 - Service units point to paths that do not exist on the target Pi
-- Corpus rebuild path and bot runtime path drift apart
-- Operators refresh Kiwix content without rebuilding the derived answer index
-- runtime `.zim` fallback is enabled but the allowlisted `.zim` files are missing
+- Operators refresh Kiwix content but forget to update the allowlisted runtime archives
+- configured `.zim` allowlist files are missing
 - provider-specific model service is installed but the configured model package or endpoint path is wrong
 - the Pi app container cannot reach `host.docker.internal:8000`
 - A legacy config still uses `llm.model_path` or `llm.max_words` instead of the current v1 contract

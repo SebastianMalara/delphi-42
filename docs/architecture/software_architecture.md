@@ -27,10 +27,7 @@ The current repository is a Python-first scaffold and the architecture follows t
   - deterministic answer shaping and packet splitting
   - answer policy and privacy rules
 - `ingest/`
-  - text extraction
-  - Kiwix/ZIM-derived corpus preparation
-  - chunking
-  - SQLite FTS index construction
+  - retired placeholder package from the earlier index-based design
 - `config/`
   - YAML runtime configuration
 - container packaging

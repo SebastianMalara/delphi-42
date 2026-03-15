@@ -21,14 +21,15 @@ broadcasts:
     - SEEK WISDOM IN PRIVATE.
 
 knowledge:
-  plaintext_dir: data/library/plaintext
-  index_path: data/index/oracle-mac.db
   kiwix_url: http://127.0.0.1:8080
   zim_dir: data/library/zim
-  runtime_zim_fallback_enabled: false
-  runtime_zim_allowlist:
+  zim_allowlist:
     - medicine.zim
-  runtime_zim_search_limit: 3
+    - mdwiki.zim
+    - ifixit.zim
+    - appropedia.zim
+    - wikivoyage.zim
+  zim_search_limit: 3
 
 llm:
   backend: openai-compatible
@@ -41,8 +42,12 @@ llm:
 
 reply:
   short_max_chars: 120
-  continuation_max_chars: 600
-  max_continuation_packets: 3
+  condensed_max_chars: 600
+  max_total_packets: 7
+  ask_min_total_packets: 5
+  ask_max_total_packets: 7
+  chat_min_total_packets: 2
+  chat_max_total_packets: 4
 
 wifi:
   ssid: DELPHI-42-MAC

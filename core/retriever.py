@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import re
-import sqlite3
-from typing import Protocol, Sequence
+from typing import Callable, Sequence, Protocol
 
 
 @dataclass(frozen=True)
@@ -39,196 +38,98 @@ class Retriever(Protocol):
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
         ...
 
-    def expand_source_context(
-        self,
-        seed_chunk: RetrievalChunk,
-        limit: int = 2,
-    ) -> list[RetrievalChunk]:
-        ...
+
+class KiwixDependencyError(RuntimeError):
+    """Raised when the optional Kiwix runtime dependencies are unavailable."""
 
 
 class NullRetriever:
-    """Fallback retriever used until a real index is attached."""
+    """Fallback retriever used until a real archive is attached."""
 
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
         return []
-
-    def expand_source_context(
-        self,
-        seed_chunk: RetrievalChunk,
-        limit: int = 2,
-    ) -> list[RetrievalChunk]:
-        return [seed_chunk][:limit]
 
 
 class KeywordRetriever:
     """Small deterministic retriever for development and tests."""
 
-    def __init__(self, corpus: Sequence[RetrievalChunk]) -> None:
-        self.corpus = list(corpus)
+    def __init__(self, chunks: Sequence[RetrievalChunk]) -> None:
+        self.chunks = list(chunks)
+
+    def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
+        query_terms = normalized_query_terms(question)
+        ranked = _score_candidates(query_terms, self.chunks)
+        return [item.chunk for item in ranked[: max(limit, 0)]]
+
+
+class KiwixRetriever:
+    """Kiwix-backed retriever that searches allowlisted ZIM archives directly."""
+
+    def __init__(
+        self,
+        zim_dir: Path,
+        allowlist: Sequence[str],
+        *,
+        default_limit: int = 3,
+        search_limit: int = 3,
+        search_fn: Callable[[str, str], tuple[int, list[object]]] | None = None,
+        read_fn: Callable[[str, str], str] | None = None,
+    ) -> None:
+        self.zim_dir = zim_dir
+        self.allowlist = tuple(allowlist)
+        self.default_limit = default_limit
+        self.search_limit = search_limit
+
+        if search_fn is None or read_fn is None:
+            try:
+                from llm_tools_kiwix import kiwix_read, kiwix_search
+            except ImportError as exc:
+                raise KiwixDependencyError(
+                    "llm_tools_kiwix is not installed; install the optional Kiwix dependency."
+                ) from exc
+            search_fn = search_fn or kiwix_search
+            read_fn = read_fn or kiwix_read
+
+        self._search_fn = search_fn
+        self._read_fn = read_fn
 
     def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
         query_terms = normalized_query_terms(question)
         if not query_terms:
             return []
 
-        scored: list[tuple[int, int, RetrievalChunk]] = []
-        for index, chunk in enumerate(self.corpus):
-            coverage = score_query_terms(query_terms, chunk.title, chunk.snippet)
-            if coverage < minimum_grounding_threshold(query_terms):
-                continue
-            title_overlap = title_match_count(query_terms, chunk.title)
-            score = candidate_score(query_terms, chunk.title, chunk.snippet)
-            scored.append(
-                (
-                    score,
-                    index,
-                    RetrievalChunk(
-                        title=chunk.title,
-                        snippet=chunk.snippet,
-                        source=chunk.source,
-                        matched_terms=max(chunk.matched_terms, coverage),
-                        ordinal=chunk.ordinal,
-                    ),
-                )
-            )
-
-        scored.sort(key=lambda item: (-item[0], item[1]))
-        requested_limit = max(limit or 3, 1)
-        return [chunk for _, _, chunk in scored[:requested_limit]]
-
-    def expand_source_context(
-        self,
-        seed_chunk: RetrievalChunk,
-        limit: int = 2,
-    ) -> list[RetrievalChunk]:
-        return expand_source_context_from_chunks(seed_chunk, self.corpus, limit=limit)
-
-
-class SQLiteRetriever:
-    """SQLite FTS retriever used by the production runtime."""
-
-    def __init__(self, db_path: Path, default_limit: int = 3) -> None:
-        self.db_path = db_path
-        self.default_limit = default_limit
-        self._validate_index()
-
-    def search(self, question: str, limit: int = 3) -> list[RetrievalChunk]:
-        query_terms = normalized_query_terms(question)
-        queries = _question_to_fts_queries(question)
-        if not queries or not query_terms:
-            return []
-
         requested_limit = max(limit or self.default_limit, 1)
-        candidate_limit = max(requested_limit * 6, 18)
-        rows = self._fetch_candidate_rows(queries, candidate_limit)
+        candidates: list[RetrievalChunk] = []
+        for filename in self.allowlist:
+            zim_path = str((self.zim_dir / filename).resolve())
+            _, article_paths = self._search_fn(zim_path, question)
+            for article_path in self._normalize_article_paths(article_paths)[: self.search_limit]:
+                article_text = self._read_fn(zim_path, article_path)
+                if not article_text or _looks_like_kiwix_error(article_text):
+                    continue
+                candidates.extend(
+                    _article_chunks(
+                        archive_name=filename,
+                        article_path=article_path,
+                        article_text=article_text,
+                        query_terms=query_terms,
+                    )
+                )
 
-        ranked_chunks: list[tuple[int, int, float, int, RetrievalChunk]] = []
-        for index, (title, source_id, ordinal, text, rank) in enumerate(rows):
-            coverage = score_query_terms(query_terms, title, text)
-            if coverage < minimum_grounding_threshold(query_terms):
+        ranked = _score_candidates(query_terms, candidates)
+        candidate_limit = max(requested_limit * 6, 12)
+        return [item.chunk for item in ranked[:candidate_limit]]
+
+    def _normalize_article_paths(self, article_paths: Sequence[object]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in article_paths:
+            path = _result_path(item)
+            if not path or path in seen:
                 continue
-            title_overlap = title_match_count(query_terms, title)
-            score = candidate_score(query_terms, title, text)
-            ranked_chunks.append(
-                (
-                    score,
-                    title_overlap,
-                    float(rank),
-                    index,
-                    RetrievalChunk(
-                        title=title,
-                        snippet=text,
-                        source=source_id,
-                        matched_terms=coverage,
-                        ordinal=int(ordinal),
-                    ),
-                )
-            )
-
-        ranked_chunks.sort(key=lambda item: (-item[0], -item[1], item[2], item[3]))
-        return [chunk for _, _, _, _, chunk in ranked_chunks[:requested_limit]]
-
-    def expand_source_context(
-        self,
-        seed_chunk: RetrievalChunk,
-        limit: int = 2,
-    ) -> list[RetrievalChunk]:
-        if limit <= 1:
-            return [seed_chunk]
-
-        neighbors: list[RetrievalChunk] = []
-        with sqlite3.connect(self.db_path) as connection:
-            rows = connection.execute(
-                """
-                SELECT title, source_id, ordinal, text
-                FROM chunks
-                WHERE source_id = ?
-                  AND ordinal IN (?, ?)
-                ORDER BY ABS(ordinal - ?), ordinal
-                LIMIT ?
-                """,
-                (
-                    seed_chunk.source,
-                    seed_chunk.ordinal - 1,
-                    seed_chunk.ordinal + 1,
-                    seed_chunk.ordinal,
-                    max(limit - 1, 0),
-                ),
-            ).fetchall()
-
-        for title, source_id, ordinal, text in rows:
-            neighbors.append(
-                RetrievalChunk(
-                    title=title,
-                    snippet=text,
-                    source=source_id,
-                    matched_terms=seed_chunk.matched_terms,
-                    ordinal=int(ordinal),
-                )
-            )
-
-        return expand_source_context_from_chunks(seed_chunk, neighbors, limit=limit)
-
-    def _fetch_candidate_rows(
-        self,
-        queries: Sequence[str],
-        candidate_limit: int,
-    ) -> list[tuple[str, str, int, str, float]]:
-        seen: set[tuple[str, int]] = set()
-        rows: list[tuple[str, str, int, str, float]] = []
-        with sqlite3.connect(self.db_path) as connection:
-            for query in queries:
-                fetched = connection.execute(
-                    """
-                    SELECT title, source_id, ordinal, text, bm25(chunks) AS rank
-                    FROM chunks
-                    WHERE chunks MATCH ?
-                    ORDER BY rank
-                    LIMIT ?
-                    """,
-                    (query, candidate_limit),
-                ).fetchall()
-                for title, source_id, ordinal, text, rank in fetched:
-                    key = (str(source_id), int(ordinal))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    rows.append((title, source_id, int(ordinal), text, float(rank)))
-                if len(rows) >= candidate_limit:
-                    break
-        return rows
-
-    def _validate_index(self) -> None:
-        if not self.db_path.exists():
-            raise FileNotFoundError(f"SQLite index not found: {self.db_path}")
-
-        with sqlite3.connect(self.db_path) as connection:
-            row = connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'"
-            ).fetchone()
-        if row is None:
-            raise ValueError(f"SQLite index is missing required 'chunks' table: {self.db_path}")
+            normalized.append(path)
+            seen.add(path)
+        return normalized
 
 
 def assess_retrieval(
@@ -279,7 +180,7 @@ def assess_retrieval(
     if callable(context_expander):
         context = tuple(context_expander(selected, limit=context_limit))
     else:
-        context = tuple(expand_source_context_from_chunks(selected, chunks, limit=context_limit))
+        context = tuple(candidate.chunk for candidate in by_source[:context_limit])
 
     return RetrievalAssessment(
         anchor_terms=anchor_terms,
@@ -454,6 +355,7 @@ QUESTION_STOPWORDS = {
     "when",
     "where",
     "which",
+    "while",
     "who",
     "why",
     "will",
@@ -513,17 +415,6 @@ def expand_source_context_from_chunks(
             break
     ordered.sort(key=lambda chunk: chunk.ordinal)
     return ordered[:limit]
-
-
-def _question_to_fts_queries(question: str) -> tuple[str, ...]:
-    tokens = raw_query_terms(question)
-    if not tokens:
-        return ()
-
-    quoted = [f'"{token}"' for token in tokens]
-    if len(quoted) == 1:
-        return (quoted[0],)
-    return (" AND ".join(quoted), " OR ".join(quoted))
 
 
 def _raw_tokens(text: str) -> set[str]:
@@ -595,3 +486,83 @@ def _score_candidates(
         )
     )
     return ranked
+
+
+def _article_chunks(
+    *,
+    archive_name: str,
+    article_path: str,
+    article_text: str,
+    query_terms: Sequence[str],
+) -> list[RetrievalChunk]:
+    title = _path_to_title(article_path)
+    normalized_text = " ".join(article_text.strip().split())
+    if not normalized_text:
+        return []
+
+    sentences = [chunk.strip() for chunk in re.split(r"(?<=[.!?])\s+", normalized_text) if chunk.strip()]
+    if not sentences:
+        sentences = [normalized_text]
+
+    chunks: list[RetrievalChunk] = []
+    window_size = 2
+    for index in range(len(sentences)):
+        window = _trim_retrieval_snippet(" ".join(sentences[index : index + window_size]).strip())
+        if not window:
+            continue
+        coverage = score_query_terms(query_terms, title, window)
+        if coverage <= 0:
+            continue
+        chunks.append(
+            RetrievalChunk(
+                title=title,
+                snippet=window,
+                source=f"{archive_name}:{article_path}",
+                matched_terms=coverage,
+                ordinal=index,
+            )
+        )
+    if chunks:
+        return chunks
+
+    return [
+        RetrievalChunk(
+            title=title,
+            snippet=_trim_retrieval_snippet(normalized_text),
+            source=f"{archive_name}:{article_path}",
+            matched_terms=score_query_terms(query_terms, title, normalized_text),
+            ordinal=0,
+        )
+    ]
+
+
+def _trim_retrieval_snippet(text: str, max_chars: int = 420) -> str:
+    normalized = " ".join(text.strip().split())
+    if len(normalized) <= max_chars:
+        return normalized
+    cutoff = normalized[:max_chars].rstrip()
+    if " " in cutoff:
+        cutoff = cutoff.rsplit(" ", maxsplit=1)[0]
+    return cutoff.rstrip(" ,;:") + "..."
+
+
+def _path_to_title(article_path: str) -> str:
+    stem = Path(article_path).stem.replace("_", " ")
+    return re.sub(r"(?<!^)(?=[A-Z])", " ", stem)
+
+
+def _result_path(item: object) -> str:
+    if isinstance(item, str):
+        return item.strip()
+
+    for attribute in ("path", "full_path", "url", "href"):
+        value = getattr(item, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return str(item).strip()
+
+
+def _looks_like_kiwix_error(text: str) -> bool:
+    lowered = text.strip().lower()
+    return lowered.startswith("error") or lowered.startswith("an unexpected error")

@@ -1,6 +1,6 @@
 # Ubuntu Sigma OVMS Quickstart
 
-- Purpose: Provide the fastest host-native software validation path for Delphi-42 on an Ubuntu x86 host such as LattePanda Sigma using OpenVINO Model Server, optional Kiwix, real `.zim` archives, and an optional live T114.
+- Purpose: Provide the fastest host-native software validation path for Delphi-42 on an Ubuntu x86 host such as LattePanda Sigma using OpenVINO Model Server, a managed Kiwix browse service, real `.zim` archives, and an optional live T114.
 - Audience: Engineering and advanced operators.
 - Owner: Software Lead
 - Status: Draft v1
@@ -15,7 +15,7 @@ This is the preferred x86 Ubuntu prototype lane for Delphi-42:
 - run Delphi-42 natively on the host
 - run OVMS on the host as the OpenAI-compatible model API
 - keep `llm.backend: openai-compatible` and `llm.provider: ovms`
-- use Kiwix in Docker only if you want archive browsing
+- run Kiwix in Docker for local archive browsing by default, with an opt-out flag
 - start with simulated radio, then switch to a supervised live T114 over USB
 
 ## Preferred Bootstrap
@@ -26,7 +26,7 @@ For this lane, the preferred path is now the one-line bootstrap script from the 
 ./scripts/bootstrap_ubuntu_ovms.sh
 ```
 
-It installs the Ubuntu host prerequisites, creates the gitignored runtime root under `artifacts/ubuntu-ovms/`, downloads the selected medicine archive into `artifacts/ubuntu-ovms/library/zim/releases/`, aliases it locally as `medicine.zim`, builds the runtime index, starts OVMS with `OpenVINO/Phi-3.5-mini-instruct-int4-ov`, detects the attached Heltec T114 by `/dev/serial/by-id/...`, generates local sim/live configs, and runs both preflight checks.
+It installs the Ubuntu host prerequisites, creates the gitignored runtime root under `artifacts/ubuntu-ovms/`, downloads the selected medicine archive into `artifacts/ubuntu-ovms/library/zim/releases/`, aliases it locally as `medicine.zim`, starts a managed Kiwix container on `http://127.0.0.1:8080`, starts OVMS with `OpenVINO/Qwen3-8B-int4-ov`, enables the `hermes3` tool parser for Qwen3 models, detects the attached Heltec T114 by `/dev/serial/by-id/...`, generates local sim/live configs, and runs both preflight checks.
 
 Assumptions and caveats:
 
@@ -41,10 +41,11 @@ Useful overrides:
 ./scripts/bootstrap_ubuntu_ovms.sh --zim-profile maxi
 ./scripts/bootstrap_ubuntu_ovms.sh --radio-device /dev/serial/by-id/usb-Heltec_...
 ./scripts/bootstrap_ubuntu_ovms.sh --refresh-zim
+./scripts/bootstrap_ubuntu_ovms.sh --no-kiwix
 ./scripts/bootstrap_ubuntu_ovms.sh --reuse-index
 ```
 
-Use `--reuse-index` on reruns when `artifacts/ubuntu-ovms/library/plaintext/` and `artifacts/ubuntu-ovms/index/oracle-ubuntu-ovms.db` are already populated and you only want to restart OVMS, regenerate local wrappers, or rerun preflight without extracting/indexing again.
+Use `--reuse-index` on reruns when `artifacts/ubuntu-ovms/library/zim/medicine.zim` is already staged and you only want to restart OVMS, regenerate local wrappers, rerun preflight, or bring Kiwix back up without resolving/downloading another archive.
 
 The generated helper commands are:
 
@@ -60,11 +61,11 @@ If you need to control each step manually instead of using the bootstrap, use th
 1. Install Ubuntu 22.04 or another supported Ubuntu release for your OVMS setup.
 2. Install `libzim`, Python 3.9 or newer, and `uv`.
 3. Confirm OVMS is already installed and serving a text-generation model through its OpenAI-compatible `/v3` endpoints.
-4. Install Docker only if you want optional Kiwix browsing.
+4. Install Docker so the managed Kiwix browse container can run.
 5. From the repo root, create the local data directories:
 
 ```bash
-mkdir -p data/index data/library/plaintext data/library/zim
+mkdir -p data/library/zim
 ```
 
 6. Create the Python environment and install the project:
@@ -87,12 +88,11 @@ curl http://127.0.0.1:8000/v3/models
    - keep `llm.base_url` pointed at the OVMS `/v3` base URL
    - replace `llm.model` with the exact model id returned by `/v3/models`
 
-## Stage A: Simulated Radio + OVMS + Sample Corpus
-
-Build the sample index:
+## Stage A: Simulated Radio + OVMS + Allowlisted ZIM
 
 ```bash
-uv run python -m ingest.build_index --input-dir sample_data/plaintext --db data/index/oracle-ubuntu-ovms.db
+mkdir -p data/library/zim
+cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
 Run preflight:
@@ -109,16 +109,16 @@ DELPHI_CONFIG=config/oracle.ubuntu.ovms.sim.yaml uv run python -m bot.dev_consol
 
 Smoke tests:
 
+- `?ask how do i purify water`
 - `how do i purify water`
-- `/public how do i purify water`
-- `where`
+- `?where`
 
 Expected results:
 
-- direct `ask` produces a bounded reply
-- public traffic is ignored
-- `where` produces a text confirmation plus a simulated private position packet
-- if OVMS is down or the model id is wrong, Delphi-42 degrades to deterministic summaries
+- direct `?ask` produces a bounded reply
+- bare text returns a short usage hint instead of guessing intent
+- `?where` produces a text confirmation plus a simulated private position packet
+- if OVMS is down or the model id is wrong, Delphi-42 degrades to deterministic grounded summaries
 
 ## Stage B: Real `.zim` Validation
 
@@ -128,28 +128,17 @@ Copy one real archive into the local ZIM directory and stage it under the stable
 cp /path/to/<actual-download>.zim data/library/zim/medicine.zim
 ```
 
-Enable runtime fallback in [`config/oracle.ubuntu.ovms.sim.yaml`](../../config/oracle.ubuntu.ovms.sim.yaml):
-
-- set `knowledge.runtime_zim_fallback_enabled: true`
-
-Validate direct runtime `.zim` fallback first by keeping the sample-only SQLite index and rerunning preflight:
+Validate direct runtime `.zim` retrieval by rerunning preflight:
 
 ```bash
 uv run python -m scripts.host_preflight --config config/oracle.ubuntu.ovms.sim.yaml
 ```
 
-Then validate the ingest path explicitly:
-
-```bash
-uv run python -m ingest.extract_zim --zim-dir data/library/zim --output-dir data/library/plaintext --allowlist medicine.zim
-uv run python -m ingest.build_index --input-dir data/library/plaintext --db data/index/oracle-ubuntu-ovms-zim.db
-```
-
 Expected results:
 
-- `extract_zim` writes normalized plaintext under `data/library/plaintext`
-- the extracted archive can be indexed into a second SQLite database
-- runtime `.zim` fallback works even before you switch the main runtime to the extracted index
+- direct Kiwix-backed `.zim` lookup works from the allowlisted archive
+- the first packet is a condensate of the continuation packets
+- runtime `.zim` retrieval no longer depends on a separate index build
 
 ## Stage C: Supervised Live T114 Over USB
 
@@ -164,7 +153,7 @@ The first live preflight run will usually fail until you replace the placeholder
 
 3. Edit [`config/oracle.ubuntu.ovms.live.yaml`](../../config/oracle.ubuntu.ovms.live.yaml):
    - replace `radio.device` with the actual `/dev/serial/by-id/...` path when available, or the correct `/dev/ttyACM...` or `/dev/ttyUSB...` fallback
-   - if you already enabled `.zim` fallback in the simulated config, mirror that change here if you want the same retrieval behavior live
+   - keep `knowledge.zim_dir` and `knowledge.zim_allowlist` aligned with the staged archive if you moved it from the bootstrap defaults
 
 4. Re-run preflight:
 
@@ -180,12 +169,12 @@ DELPHI_CONFIG=config/oracle.ubuntu.ovms.live.yaml uv run python -m bot.oracle_bo
 
 6. Use a second Meshtastic client, such as another node or the phone app, to send DMs to the Ubuntu-attached T114.
 
-## Optional Kiwix
+## Kiwix Browse Service
 
-If you want browse testing on the same host, run Kiwix separately:
+The bootstrap starts Kiwix on `http://127.0.0.1:8080` by default. If you skipped it with `--no-kiwix`, or if you are following the manual flow, you can start Kiwix separately:
 
 ```bash
 docker compose -f compose.yaml up kiwix
 ```
 
-Kiwix is browse-only for this lane. It is not required for answer generation.
+Kiwix is browse-only for this lane. Answer generation still uses `llm-tools-kiwix` directly against the allowlisted `.zim` files.

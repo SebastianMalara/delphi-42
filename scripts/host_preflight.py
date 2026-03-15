@@ -12,8 +12,6 @@ from urllib.parse import urlparse
 
 from bot.oracle_bot import load_config
 from core.llm_runner import ModelExecutionError, ModelUnavailableError, OpenAICompatibleRunner
-from core.prompt_builder import build_prompt
-from core.retriever import SQLiteRetriever
 from core.runtime_config import ConfigError, OracleRuntimeConfig
 
 
@@ -30,8 +28,9 @@ PROVIDER_EXPECTED_BASE_PATH = {
     "ovms": "/v3",
 }
 MESHTASTIC_SHORT_MAX_CHARS = 100
-MESHTASTIC_CONTINUATION_MAX_CHARS = 120
-MESHTASTIC_MAX_CONTINUATION_PACKETS = 3
+MESHTASTIC_CONDENSED_MAX_CHARS = 600
+MESHTASTIC_ASK_MAX_TOTAL_PACKETS = 7
+MESHTASTIC_CHAT_MAX_TOTAL_PACKETS = 4
 
 
 @dataclass(frozen=True)
@@ -55,12 +54,12 @@ def run_preflight(
         _check_placeholder_values(config),
         _check_provider_base_url(config),
         _check_import("openai", import_module_fn),
+        _check_import("llm_tools_kiwix", import_module_fn),
         _check_import("libzim.reader", import_module_fn),
         _check_import("meshtastic.serial_interface", import_module_fn),
         _check_import("pubsub", import_module_fn),
         _check_model_service(config, urlopen_fn),
         _check_completion_probe(config, runner_factory),
-        _check_index(config.knowledge.index_path),
         _check_runtime_zim_files(config),
         _check_serial_devices(config, glob_fn),
         _check_mesh_packet_settings(config),
@@ -147,42 +146,24 @@ def _check_completion_probe(
             api_key=config.llm.api_key,
             timeout_seconds=config.llm.timeout_seconds,
         )
-        answer = runner.generate(
-            build_prompt(
-                "Reply with a short readiness confirmation.",
-                [],
-            )
+        answer = runner.complete(
+            "Reply with a short readiness confirmation.",
+            temperature=0.0,
         )
     except (ModelUnavailableError, ModelExecutionError) as exc:
         return CheckResult("llm-completion", False, str(exc))
     except Exception as exc:
         return CheckResult("llm-completion", False, f"completion probe failed: {exc}")
 
-    short_answer = getattr(answer, "short_answer", "")
-    if not isinstance(short_answer, str) or not short_answer.strip():
+    if not isinstance(answer, str) or not answer.strip():
         return CheckResult("llm-completion", False, "completion probe returned an empty answer")
     return CheckResult("llm-completion", True, "completion probe succeeded")
 
 
-def _check_index(index_path: Path) -> CheckResult:
-    try:
-        SQLiteRetriever(index_path)
-    except Exception as exc:
-        return CheckResult("sqlite-index", False, f"{index_path}: {exc}")
-    return CheckResult("sqlite-index", True, str(index_path))
-
-
 def _check_runtime_zim_files(config: OracleRuntimeConfig) -> CheckResult:
-    if not config.knowledge.runtime_zim_fallback_enabled:
-        return CheckResult(
-            "zim-files",
-            True,
-            f"runtime fallback disabled; configured dir is {config.knowledge.zim_dir}",
-        )
-
     missing = [
         filename
-        for filename in config.knowledge.runtime_zim_allowlist
+        for filename in config.knowledge.zim_allowlist
         if not (config.knowledge.zim_dir / filename).exists()
     ]
     if missing:
@@ -191,12 +172,12 @@ def _check_runtime_zim_files(config: OracleRuntimeConfig) -> CheckResult:
             False,
             "missing allowlisted archives: " + ", ".join(missing),
         )
-    if not config.knowledge.runtime_zim_allowlist:
-        return CheckResult("zim-files", False, "runtime fallback enabled without an allowlist")
+    if not config.knowledge.zim_allowlist:
+        return CheckResult("zim-files", False, "knowledge.zim_allowlist is empty")
     return CheckResult(
         "zim-files",
         True,
-        "allowlisted archives present: " + ", ".join(config.knowledge.runtime_zim_allowlist),
+        "allowlisted archives present: " + ", ".join(config.knowledge.zim_allowlist),
     )
 
 
@@ -250,8 +231,11 @@ def _check_mesh_packet_settings(config: OracleRuntimeConfig) -> CheckResult:
 
     if (
         config.reply.short_max_chars > MESHTASTIC_SHORT_MAX_CHARS
-        or config.reply.continuation_max_chars > MESHTASTIC_CONTINUATION_MAX_CHARS
-        or config.reply.max_continuation_packets > MESHTASTIC_MAX_CONTINUATION_PACKETS
+        or config.reply.condensed_max_chars > MESHTASTIC_CONDENSED_MAX_CHARS
+        or (config.reply.ask_max_total_packets or config.reply.max_total_packets)
+        > MESHTASTIC_ASK_MAX_TOTAL_PACKETS
+        or (config.reply.chat_max_total_packets or config.reply.max_total_packets)
+        > MESHTASTIC_CHAT_MAX_TOTAL_PACKETS
     ):
         return CheckResult(
             "mesh-packets",
@@ -259,8 +243,9 @@ def _check_mesh_packet_settings(config: OracleRuntimeConfig) -> CheckResult:
             (
                 "reply contract exceeds live Meshtastic profile envelope: "
                 f"short<={MESHTASTIC_SHORT_MAX_CHARS}, "
-                f"continuation<={MESHTASTIC_CONTINUATION_MAX_CHARS}, "
-                f"max_packets<={MESHTASTIC_MAX_CONTINUATION_PACKETS}"
+                f"condensed<={MESHTASTIC_CONDENSED_MAX_CHARS}, "
+                f"ask_max_packets<={MESHTASTIC_ASK_MAX_TOTAL_PACKETS}, "
+                f"chat_max_packets<={MESHTASTIC_CHAT_MAX_TOTAL_PACKETS}"
             ),
         )
 

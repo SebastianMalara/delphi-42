@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
 from typing import Any, Callable, Protocol
 
 
 NO_GROUNDED_ANSWER = "The archive does not contain a grounded answer yet."
 ARCHIVE_UNAVAILABLE = "The archive is temporarily unavailable."
+CHAT_UNAVAILABLE = "Chat mode needs the local model right now."
 
 
 class ModelUnavailableError(RuntimeError):
@@ -16,27 +17,15 @@ class ModelExecutionError(RuntimeError):
     """Raised when a model backend fails during generation."""
 
 
-@dataclass(frozen=True)
-class AnswerDraft:
-    short_answer: str
-    extended_answer: str
-
-
 class LLMRunner(Protocol):
-    def generate(self, prompt: str) -> AnswerDraft:
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        temperature: float = 0.0,
+    ) -> str:
         ...
-
-
-class RuleBasedRunner:
-    """Deterministic fallback that summarizes the first retrieved passage."""
-
-    def generate(self, prompt: str) -> AnswerDraft:
-        context = _extract_context(prompt)
-        if not context or context == "(no matching passages)":
-            return AnswerDraft(NO_GROUNDED_ANSWER, NO_GROUNDED_ANSWER)
-
-        first_line = context.splitlines()[0].removeprefix("- ").strip()
-        return AnswerDraft(short_answer=first_line, extended_answer=first_line)
 
 
 class OpenAICompatibleRunner:
@@ -76,19 +65,36 @@ class OpenAICompatibleRunner:
 
         self._preflight_model()
 
-    def generate(self, prompt: str) -> AnswerDraft:
-        text = self._create_completion(prompt)
-        return parse_answer_draft(text)
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        temperature: float = 0.0,
+    ) -> str:
+        return self._create_completion(
+            prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+        )
 
-    def generate_long_answer(self, prompt: str) -> str:
-        return self._create_completion(prompt)
+    def _create_completion(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        temperature: float,
+    ) -> str:
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
-    def _create_completion(self, prompt: str) -> str:
         try:
             output = self._client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
+                messages=messages,
+                temperature=temperature,
             )
         except Exception as exc:
             raise ModelExecutionError("OpenAI-compatible chat completion failed") from exc
@@ -101,7 +107,7 @@ class OpenAICompatibleRunner:
 
         if not text:
             raise ModelExecutionError("OpenAI-compatible API returned an empty completion")
-        return text
+        return _strip_reasoning_markup(text)
 
     def _preflight_model(self) -> None:
         try:
@@ -121,27 +127,6 @@ class OpenAICompatibleRunner:
 AXCLOpenAIRunner = OpenAICompatibleRunner
 
 
-def parse_answer_draft(text: str) -> AnswerDraft:
-    raw = " ".join(text.strip().split())
-    if not raw:
-        raise ModelExecutionError("Model returned an empty answer draft")
-
-    short_marker = "SHORT:"
-    long_marker = "LONG:"
-    if short_marker not in text or long_marker not in text:
-        raise ModelExecutionError(
-            "OpenAI-compatible API did not return the required SHORT/LONG format"
-        )
-
-    short_part = text.split(short_marker, maxsplit=1)[1].split(long_marker, maxsplit=1)[0]
-    long_part = text.split(long_marker, maxsplit=1)[1]
-    short = " ".join(short_part.strip().split())
-    extended = " ".join(long_part.strip().split())
-    if not short or not extended:
-        raise ModelExecutionError("OpenAI-compatible API returned an incomplete SHORT/LONG answer")
-    return AnswerDraft(short_answer=short, extended_answer=extended)
-
-
 def _coerce_content(content: Any) -> str:
     if isinstance(content, str):
         return content.strip()
@@ -158,9 +143,9 @@ def _coerce_content(content: Any) -> str:
     return str(content).strip()
 
 
-def _extract_context(prompt: str) -> str:
-    marker = "Context:\n"
-    question_marker = "\n\nQuestion:\n"
-    if marker not in prompt or question_marker not in prompt:
-        return ""
-    return prompt.split(marker, maxsplit=1)[1].split(question_marker, maxsplit=1)[0].strip()
+_THINK_TAG_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_reasoning_markup(text: str) -> str:
+    stripped = _THINK_TAG_RE.sub("", text).strip()
+    return stripped or text

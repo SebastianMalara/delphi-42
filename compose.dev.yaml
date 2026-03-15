@@ -3,20 +3,8 @@ services:
     environment:
       DELPHI_CONFIG: /workspace/config/oracle.dev.yaml
     depends_on:
-      oracle-indexer:
-        condition: service_completed_successfully
       mock-openai:
         condition: service_healthy
-
-  oracle-indexer:
-    command:
-      - python
-      - -m
-      - ingest.build_index
-      - --input-dir
-      - /workspace/sample_data/plaintext
-      - --db
-      - /workspace/artifacts/dev/oracle.db
 
   mock-openai:
     build:

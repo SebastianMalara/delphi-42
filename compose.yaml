@@ -1,21 +1,4 @@
 services:
-  oracle-indexer:
-    build:
-      context: .
-    image: delphi42:latest
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command:
-      - python
-      - -m
-      - ingest.build_index
-      - --input-dir
-      - /workspace/sample_data/plaintext
-      - --db
-      - /workspace/artifacts/dev/oracle.db
-    restart: "no"
-
   oracle-app:
     build:
       context: .
@@ -23,9 +6,6 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
-    depends_on:
-      oracle-indexer:
-        condition: service_completed_successfully
     environment:
       DELPHI_LOG_LEVEL: INFO
     command:
@@ -34,12 +14,13 @@ services:
       - bot.oracle_bot
 
   kiwix:
-    image: kiwix/kiwix-serve:latest
+    image: ghcr.io/kiwix/kiwix-serve:3.8.0
     volumes:
       - ./data/library/zim:/data/zim:ro
-    command:
+    entrypoint:
       - /bin/sh
       - -lc
+    command:
       - |
         if ls /data/zim/*.zim >/dev/null 2>&1; then
           exec kiwix-serve --port=8080 /data/zim/*.zim;

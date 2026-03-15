@@ -2,67 +2,47 @@ from __future__ import annotations
 
 import re
 
-from .llm_runner import AnswerDraft
+
+def normalize_text(text: str) -> str:
+    return " ".join(text.strip().split())
 
 
-def format_answer_packets(
-    draft: AnswerDraft,
-    *,
-    short_max_chars: int,
-    continuation_max_chars: int,
-    max_continuation_packets: int,
-) -> tuple[str, ...]:
-    short = _normalize(draft.short_answer) or _normalize(draft.extended_answer)
-    first_packet = trim_text(short, short_max_chars)
-
-    extended = _normalize(draft.extended_answer)
-    if not extended or max_continuation_packets == 0:
-        return (first_packet,)
-
-    parts = split_text(
-        extended,
-        max_chars=continuation_max_chars,
-        max_parts=max_continuation_packets,
-    )
-    if not parts:
-        return (first_packet,)
-
-    if parts and parts[0] == first_packet:
-        parts = parts[1:]
-    if not parts:
-        return (first_packet,)
-
-    if len(parts) == 1:
-        return (first_packet, parts[0])
-
-    numbered: list[str] = []
-    total = len(parts)
-    for idx, part in enumerate(parts, start=1):
-        prefix = f"{idx}/{total} "
-        payload = trim_text(part, continuation_max_chars - len(prefix))
-        numbered.append(f"{prefix}{payload}")
-
-    return (first_packet, *numbered)
-
-
-def derive_short_answer(text: str, *, max_chars: int) -> str:
-    normalized = _normalize(text)
-    if not normalized:
+def trim_text(text: str, max_chars: int) -> str:
+    normalized = normalize_text(text)
+    if max_chars <= 0:
         return ""
-
-    sentences = [chunk for chunk in re.split(r"(?<=[.!?])\s+", normalized) if chunk]
-    first = sentences[0] if sentences else normalized
-    return trim_text(first, max_chars)
-
-
-def split_text(text: str, *, max_chars: int, max_parts: int) -> list[str]:
-    if max_parts <= 0:
-        return []
-
-    normalized = _normalize(text)
-    if not normalized:
-        return []
     if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+
+    cutoff = normalized[: max_chars - 3].rstrip()
+    if " " in cutoff:
+        cutoff = cutoff.rsplit(" ", maxsplit=1)[0]
+    cutoff = cutoff.rstrip(".,;: ")
+    return (cutoff or normalized[: max_chars - 3]).rstrip() + "..."
+
+
+def trim_to_utf8_bytes(text: str, max_bytes: int) -> str:
+    normalized = normalize_text(text)
+    encoded = normalized.encode("utf-8")
+    if max_bytes <= 0 or len(encoded) <= max_bytes:
+        return normalized
+
+    ellipsis = "..."
+    budget = max(max_bytes - len(ellipsis.encode("utf-8")), 0)
+    trimmed = normalized
+    while trimmed and len(trimmed.encode("utf-8")) > budget:
+        trimmed = trimmed[:-1]
+    trimmed = trimmed.rstrip(" .,;:")
+    return f"{trimmed or normalized[:1]}{ellipsis}"
+
+
+def split_text_by_bytes(text: str, *, max_bytes: int, max_parts: int) -> list[str]:
+    normalized = normalize_text(text)
+    if not normalized or max_parts <= 0:
+        return []
+    if max_bytes <= 0 or len(normalized.encode("utf-8")) <= max_bytes:
         return [normalized]
 
     sentences = [chunk for chunk in re.split(r"(?<=[.!?])\s+", normalized) if chunk]
@@ -76,7 +56,7 @@ def split_text(text: str, *, max_chars: int, max_parts: int) -> list[str]:
         if not sentence:
             continue
         candidate = sentence if not current else f"{current} {sentence}"
-        if len(candidate) <= max_chars:
+        if len(candidate.encode("utf-8")) <= max_bytes:
             current = candidate
             continue
 
@@ -84,43 +64,61 @@ def split_text(text: str, *, max_chars: int, max_parts: int) -> list[str]:
             parts.append(current)
             current = ""
             if len(parts) == max_parts:
-                return _trim_final_part(parts, max_chars)
+                return _trim_final_part(parts, max_bytes)
 
-        if len(sentence) <= max_chars:
+        if len(sentence.encode("utf-8")) <= max_bytes:
             current = sentence
             continue
 
-        for fragment in _split_long_fragment(sentence, max_chars):
+        for fragment in _split_long_fragment_by_bytes(sentence, max_bytes):
             parts.append(fragment)
             if len(parts) == max_parts:
-                return _trim_final_part(parts, max_chars)
+                return _trim_final_part(parts, max_bytes)
 
     if current:
         parts.append(current)
 
-    return _trim_final_part(parts[:max_parts], max_chars)
+    return _trim_final_part(parts[:max_parts], max_bytes)
 
 
-def trim_text(text: str, max_chars: int) -> str:
-    normalized = _normalize(text)
-    if len(normalized) <= max_chars:
-        return normalized
-
-    if max_chars <= 3:
-        return normalized[:max_chars]
-
-    cutoff = normalized[: max_chars - 3].rstrip()
-    if " " in cutoff:
-        cutoff = cutoff.rsplit(" ", maxsplit=1)[0]
-    cutoff = cutoff.rstrip(".,;: ")
-    return (cutoff or normalized[: max_chars - 3]).rstrip() + "..."
+def prefix_text(text: str, prefix: str) -> str:
+    normalized = normalize_text(text)
+    if not normalized:
+        return normalize_text(prefix)
+    return f"{prefix}{normalized}"
 
 
-def _normalize(text: str) -> str:
-    return " ".join(text.strip().split())
+def split_prefixed_packets(
+    text: str,
+    *,
+    prefix: str,
+    packet_byte_limit: int,
+    max_parts: int,
+) -> list[str]:
+    payload_limit = packet_payload_budget(prefix, packet_byte_limit)
+    parts = split_text_by_bytes(text, max_bytes=payload_limit, max_parts=max_parts)
+    return [prefix_text(part, prefix) for part in parts]
 
 
-def _split_long_fragment(text: str, max_chars: int) -> list[str]:
+def packet_payload_budget(prefix: str, packet_byte_limit: int) -> int:
+    if packet_byte_limit <= 0:
+        return 0
+    return max(packet_byte_limit - len(prefix.encode("utf-8")), 1)
+
+
+def fits_utf8_bytes(text: str, max_bytes: int) -> bool:
+    return max_bytes <= 0 or len(normalize_text(text).encode("utf-8")) <= max_bytes
+
+
+def first_sentence(text: str) -> str:
+    normalized = normalize_text(text)
+    if not normalized:
+        return ""
+    sentences = [chunk for chunk in re.split(r"(?<=[.!?])\s+", normalized) if chunk]
+    return sentences[0] if sentences else normalized
+
+
+def _split_long_fragment_by_bytes(text: str, max_bytes: int) -> list[str]:
     words = text.split()
     if not words:
         return []
@@ -129,14 +127,14 @@ def _split_long_fragment(text: str, max_chars: int) -> list[str]:
     current = ""
     for word in words:
         candidate = word if not current else f"{current} {word}"
-        if len(candidate) <= max_chars:
+        if len(candidate.encode("utf-8")) <= max_bytes:
             current = candidate
             continue
 
         if current:
             parts.append(current)
-        if len(word) > max_chars:
-            parts.append(trim_text(word, max_chars))
+        if len(word.encode("utf-8")) > max_bytes:
+            parts.append(trim_to_utf8_bytes(word, max_bytes))
             current = ""
         else:
             current = word
@@ -146,9 +144,9 @@ def _split_long_fragment(text: str, max_chars: int) -> list[str]:
     return parts
 
 
-def _trim_final_part(parts: list[str], max_chars: int) -> list[str]:
+def _trim_final_part(parts: list[str], max_bytes: int) -> list[str]:
     if not parts:
         return []
-    if len(parts[-1]) > max_chars:
-        parts[-1] = trim_text(parts[-1], max_chars)
+    if max_bytes > 0 and len(parts[-1].encode("utf-8")) > max_bytes:
+        parts[-1] = trim_to_utf8_bytes(parts[-1], max_bytes)
     return parts

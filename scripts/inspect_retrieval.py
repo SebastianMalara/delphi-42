@@ -5,8 +5,7 @@ from pathlib import Path
 
 from bot.oracle_bot import load_config
 from core.oracle_service import OracleService
-from core.retriever import SQLiteRetriever
-from core.zim_retriever import RuntimeZimRetriever
+from core.retriever import KiwixRetriever
 
 
 def main() -> None:
@@ -16,18 +15,15 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    retriever = SQLiteRetriever(config.knowledge.index_path)
-    fallback_retriever = None
-    if config.knowledge.runtime_zim_fallback_enabled:
-        fallback_retriever = RuntimeZimRetriever(
-            config.knowledge.zim_dir,
-            config.knowledge.runtime_zim_allowlist,
-            default_limit=config.knowledge.runtime_zim_search_limit,
-        )
+    retriever = KiwixRetriever(
+        config.knowledge.zim_dir,
+        config.knowledge.zim_allowlist,
+        default_limit=config.knowledge.zim_search_limit,
+        search_limit=config.knowledge.zim_search_limit,
+    )
 
     service = OracleService(
         retriever=retriever,
-        fallback_retriever=fallback_retriever,
         reply_config=config.reply,
     )
     decision = service.inspect_ask(args.question)

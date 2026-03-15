@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 from core.oracle_service import OracleReply, OracleService
 
@@ -18,15 +19,41 @@ class RoutedReply:
 class MessageRouter:
     """Convert incoming radio traffic into oracle responses."""
 
-    def __init__(self, oracle_service: OracleService) -> None:
+    def __init__(
+        self,
+        oracle_service: OracleService,
+        *,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self.oracle_service = oracle_service
+        self.logger = logger or logging.getLogger("delphi42.router")
 
     def route(self, message: IncomingMessage) -> RoutedReply | None:
         if not message.is_direct_message:
             return None
 
         command = parse_command(message.text)
-        reply = self.oracle_service.handle(command)
+        self.logger.debug(
+            "parsed_command sender=%s channel=%s packet_id=%s command=%s argument=%r",
+            message.sender_id,
+            message.channel,
+            message.packet_id or "-",
+            command.name,
+            command.argument,
+        )
+        reply = self.oracle_service.handle(
+            command,
+            sender_id=message.sender_id,
+            incoming_message=message,
+        )
+        self.logger.debug(
+            "reply_packets_final sender=%s command=%s mode=%s count=%s packets=%r",
+            message.sender_id,
+            command.name,
+            reply.mode.value,
+            len(reply.packets),
+            reply.packets,
+        )
         return RoutedReply(
             inbound=message,
             reply=reply,
