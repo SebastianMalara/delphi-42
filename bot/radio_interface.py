@@ -32,12 +32,23 @@ class RadioClient(Protocol):
 
 
 @dataclass(frozen=True)
+class MeshPacketMetrics:
+    rx_rssi: int | None = None
+    rx_snr: float | None = None
+    hop_start: int | None = None
+    hop_limit: int | None = None
+    rx_time: int | None = None
+    to_id: str | None = None
+
+
+@dataclass(frozen=True)
 class IncomingMessage:
     sender_id: str
     text: str
     channel: int = 0
     is_direct_message: bool = True
     packet_id: str | None = None
+    mesh: MeshPacketMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -171,6 +182,14 @@ class MeshtasticRadioClient:
                 channel=int(packet.get("channel", self.channel)),
                 is_direct_message=is_direct_message,
                 packet_id=str(packet.get("id")) if packet.get("id") is not None else None,
+                mesh=MeshPacketMetrics(
+                    rx_rssi=_optional_int(packet.get("rxRssi")),
+                    rx_snr=_optional_float(packet.get("rxSnr")),
+                    hop_start=_optional_int(packet.get("hopStart")),
+                    hop_limit=_optional_int(packet.get("hopLimit")),
+                    rx_time=_optional_int(packet.get("rxTime")),
+                    to_id=str(packet.get("toId")) if packet.get("toId") is not None else None,
+                ),
             )
         )
 
@@ -212,3 +231,21 @@ class MeshtasticRadioClient:
         if altitude is not None:
             payload["altitude"] = altitude
         return payload
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Protocol
 
 
@@ -106,7 +107,7 @@ class OpenAICompatibleRunner:
 
         if not text:
             raise ModelExecutionError("OpenAI-compatible API returned an empty completion")
-        return text
+        return _strip_reasoning_markup(text)
 
     def _preflight_model(self) -> None:
         try:
@@ -140,3 +141,11 @@ def _coerce_content(content: Any) -> str:
                 parts.append(text)
         return " ".join(part.strip() for part in parts if part and part.strip())
     return str(content).strip()
+
+
+_THINK_TAG_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_reasoning_markup(text: str) -> str:
+    stripped = _THINK_TAG_RE.sub("", text).strip()
+    return stripped or text

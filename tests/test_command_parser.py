@@ -26,3 +26,9 @@ def test_bare_text_returns_help() -> None:
 def test_missing_argument_returns_help() -> None:
     command = parse_command("?chat")
     assert command.name == "help"
+
+
+def test_parse_mesh_command() -> None:
+    command = parse_command("?mesh")
+    assert command.name == "mesh"
+    assert command.argument is None

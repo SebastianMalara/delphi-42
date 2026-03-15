@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
 import re
+from typing import TYPE_CHECKING
 
 from bot.command_parser import HELP_TEXT, ParsedCommand
 
@@ -45,6 +46,9 @@ from .retriever import (
 )
 from .runtime_config import ReplyConfig
 
+if TYPE_CHECKING:
+    from bot.radio_interface import IncomingMessage
+
 
 class ReplyMode(str, Enum):
     HELP = "help"
@@ -55,6 +59,7 @@ class ReplyMode(str, Enum):
     CHAT_MODEL = "chat_model"
     CHAT_UNAVAILABLE = "chat_unavailable"
     ARCHIVE_UNAVAILABLE = "archive_unavailable"
+    MESH = "mesh"
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,7 @@ class OracleService:
         command: ParsedCommand,
         *,
         sender_id: str | None = None,
+        incoming_message: "IncomingMessage | None" = None,
     ) -> OracleReply:
         intent = classify_command(command)
 
@@ -139,6 +145,9 @@ class OracleService:
                 command_name=command.name,
             )
 
+        if intent.kind is IntentType.MESH:
+            return self._handle_mesh(incoming_message)
+
         if intent.kind is IntentType.ASK and intent.question:
             return self._handle_ask(intent.question)
 
@@ -149,6 +158,43 @@ class OracleService:
             HELP_TEXT.strip(),
             mode=ReplyMode.HELP,
             command_name="help",
+        )
+
+    def _handle_mesh(self, incoming_message: "IncomingMessage | None") -> OracleReply:
+        if incoming_message is None:
+            return self._static_reply(
+                "Mesh stats unavailable right now.",
+                mode=ReplyMode.MESH,
+                command_name="mesh",
+            )
+
+        mesh = incoming_message.mesh
+        visibility = "direct" if incoming_message.is_direct_message else "public"
+        parts = [
+            f"sender {incoming_message.sender_id}",
+            f"channel {incoming_message.channel}",
+            visibility,
+        ]
+        if incoming_message.packet_id:
+            parts.append(f"packet {incoming_message.packet_id}")
+        if mesh is not None:
+            if mesh.rx_rssi is not None:
+                parts.append(f"RSSI {mesh.rx_rssi} dBm")
+            if mesh.rx_snr is not None:
+                parts.append(f"SNR {mesh.rx_snr:g} dB")
+            if mesh.hop_start is not None:
+                parts.append(f"hop_start {mesh.hop_start}")
+            if mesh.hop_limit is not None:
+                parts.append(f"hop_limit {mesh.hop_limit}")
+            if mesh.hop_start is not None and mesh.hop_limit is not None:
+                parts.append(f"hops_used {max(mesh.hop_start - mesh.hop_limit, 0)}")
+            if mesh.rx_time is not None:
+                parts.append(f"rx_time {mesh.rx_time}")
+
+        return self._static_reply(
+            "Mesh stats: " + ", ".join(parts) + ".",
+            mode=ReplyMode.MESH,
+            command_name="mesh",
         )
 
     def inspect_ask(self, question: str) -> RetrievalDecision:
@@ -200,6 +246,7 @@ class OracleService:
         packets, packet_shrinks = self._format_bundle(
             bundle,
             preserve_grounding=True,
+            mode=mode,
         )
         return OracleReply(
             packets=packets,
@@ -234,6 +281,7 @@ class OracleService:
         packets, packet_shrinks = self._format_bundle(
             bundle,
             preserve_grounding=False,
+            mode=ReplyMode.CHAT_MODEL,
         )
         self._remember_chat(sender_id, user_message=message, assistant_message=bundle.condensed_answer)
         return OracleReply(
@@ -272,8 +320,9 @@ class OracleService:
             preserve_grounding=True,
             system_prompt=ASK_SYSTEM_PROMPT,
         )
+        short_source = first_sentence(condensed) or condensed
         short, short_shrinks = self._rewrite_to_limit(
-            condensed,
+            short_source,
             target_chars=self.reply_config.short_max_chars,
             preserve_grounding=True,
             system_prompt=ASK_SYSTEM_PROMPT,
@@ -371,6 +420,17 @@ class OracleService:
         bundle: AnswerBundle,
         *,
         preserve_grounding: bool,
+        mode: ReplyMode,
+    ) -> tuple[tuple[str, ...], int]:
+        if mode is ReplyMode.CHAT_MODEL:
+            return self._format_chat_bundle(bundle, preserve_grounding=preserve_grounding)
+        return self._format_ask_bundle(bundle, preserve_grounding=preserve_grounding)
+
+    def _format_ask_bundle(
+        self,
+        bundle: AnswerBundle,
+        *,
+        preserve_grounding: bool,
     ) -> tuple[tuple[str, ...], int]:
         shrink_attempts = 0
         short_text = normalize_text(bundle.short_answer) or normalize_text(bundle.condensed_answer)
@@ -383,12 +443,19 @@ class OracleService:
         shrink_attempts += short_shrinks
         first_packet = prefix_text(short_text, self.response_prefix)
 
-        remaining_packets = max(self.reply_config.max_total_packets - 1, 0)
+        min_total, max_total = self._packet_range_for_ask()
+        remaining_packets = max(max_total - 1, 0)
         if remaining_packets <= 0 or not condensed_text:
             return (first_packet,), shrink_attempts
 
         continuation_text = condensed_text
         if normalize_text(continuation_text) == normalize_text(short_text):
+            return (first_packet,), shrink_attempts
+        continuation_text = self._strip_sent_prefix(
+            continuation_text,
+            sent_text=short_text,
+        )
+        if not continuation_text:
             return (first_packet,), shrink_attempts
 
         continuation_text, continuation_shrinks = self._validate_continuation_answer(
@@ -402,11 +469,48 @@ class OracleService:
             continuation_text,
             max_parts=remaining_packets,
         )
-        if continuation_packets and continuation_packets[0] == first_packet:
-            continuation_packets = continuation_packets[1:]
+        continuation_packets = [
+            packet
+            for packet in continuation_packets
+            if normalize_text(packet) != normalize_text(first_packet)
+        ]
+        minimum_followups = max(min_total - 1, 0)
+        if len(continuation_packets) < minimum_followups:
+            continuation_packets = self._force_packet_range(
+                continuation_text,
+                min_parts=minimum_followups,
+                max_parts=remaining_packets,
+            )
         if not continuation_packets:
             return (first_packet,), shrink_attempts
-        return (first_packet, *continuation_packets[:remaining_packets]), shrink_attempts
+        return self._cleanup_packet_sequence(
+            (first_packet, *continuation_packets[:remaining_packets]),
+        ), shrink_attempts
+
+    def _format_chat_bundle(
+        self,
+        bundle: AnswerBundle,
+        *,
+        preserve_grounding: bool,
+    ) -> tuple[tuple[str, ...], int]:
+        shrink_attempts = 0
+        chat_text = normalize_text(bundle.condensed_answer) or normalize_text(bundle.full_answer)
+        min_total, max_total = self._packet_range_for_chat()
+        if not chat_text:
+            return (), shrink_attempts
+
+        chat_text, continuation_shrinks = self._validate_continuation_answer(
+            chat_text,
+            preserve_grounding=preserve_grounding,
+            max_parts=max_total,
+        )
+        shrink_attempts += continuation_shrinks
+        packets = self._force_packet_range(
+            chat_text,
+            min_parts=min_total,
+            max_parts=max_total,
+        )
+        return self._cleanup_packet_sequence(tuple(packets[:max_total])), shrink_attempts
 
     def _validate_short_answer(
         self,
@@ -492,6 +596,119 @@ class OracleService:
             packet_byte_limit=self.packet_byte_limit,
             max_parts=max_parts,
         )
+
+    def _packet_range_for_ask(self) -> tuple[int, int]:
+        max_total = self.reply_config.ask_max_total_packets or self.reply_config.max_total_packets
+        min_total = self.reply_config.ask_min_total_packets or min(5, max_total)
+        return min_total, max_total
+
+    def _packet_range_for_chat(self) -> tuple[int, int]:
+        max_total = self.reply_config.chat_max_total_packets or self.reply_config.max_total_packets
+        min_total = self.reply_config.chat_min_total_packets or min(2, max_total)
+        return min_total, max_total
+
+    def _force_packet_range(
+        self,
+        text: str,
+        *,
+        min_parts: int,
+        max_parts: int,
+    ) -> list[str]:
+        if max_parts <= 0 or not text:
+            return []
+
+        base_parts = self._continuation_packets(text, max_parts=max_parts)
+        if len(base_parts) >= min_parts:
+            return base_parts[:max_parts]
+
+        target_parts = max(1, min(max_parts, min_parts))
+        raw_parts = self._split_evenly_for_packets(text, target_parts=target_parts)
+        return [prefix_text(part, self.response_prefix) for part in raw_parts if part]
+
+    def _cleanup_packet_sequence(self, packets: tuple[str, ...]) -> tuple[str, ...]:
+        if not packets:
+            return ()
+
+        cleaned: list[str] = []
+        for packet in packets:
+            normalized = normalize_text(packet)
+            if not normalized:
+                continue
+            payload = normalized.removeprefix(normalize_text(self.response_prefix)).strip()
+            if cleaned and self._is_trivial_tail(payload):
+                previous_payload = normalize_text(cleaned[-1]).removeprefix(
+                    normalize_text(self.response_prefix)
+                ).strip()
+                merged_payload = normalize_text(f"{previous_payload} {payload}")
+                merged_packet = prefix_text(merged_payload, self.response_prefix)
+                if self.packet_byte_limit <= 0 or fits_utf8_bytes(merged_packet, self.packet_byte_limit):
+                    cleaned[-1] = merged_packet
+                continue
+            cleaned.append(normalized)
+        return tuple(cleaned)
+
+    def _is_trivial_tail(self, payload: str) -> bool:
+        words = payload.split()
+        if not words:
+            return True
+        if len(words) == 1 and len(words[0]) <= 16:
+            return True
+        if len(words) == 2 and len(payload) <= 18:
+            return True
+        return False
+
+    def _split_evenly_for_packets(self, text: str, *, target_parts: int) -> list[str]:
+        normalized = normalize_text(text)
+        if not normalized or target_parts <= 1:
+            return [normalized] if normalized else []
+
+        words = normalized.split()
+        if len(words) <= 1:
+            return [normalized]
+
+        max_bytes = 0
+        if self.packet_byte_limit > 0:
+            max_bytes = packet_payload_budget(self.response_prefix, self.packet_byte_limit)
+
+        total_chars = sum(len(word) for word in words) + max(len(words) - 1, 0)
+        approx_chars_per_part = max(total_chars // target_parts, 1)
+        parts: list[str] = []
+        current_words: list[str] = []
+
+        for index, word in enumerate(words):
+            candidate_words = [*current_words, word]
+            candidate = " ".join(candidate_words)
+            remaining_words = len(words) - index - 1
+            remaining_parts = max(target_parts - len(parts) - 1, 1)
+            should_break = (
+                current_words
+                and len(candidate) > approx_chars_per_part
+                and remaining_words >= remaining_parts
+            )
+            if max_bytes > 0 and current_words and len(candidate.encode("utf-8")) > max_bytes:
+                should_break = True
+
+            if should_break:
+                parts.append(" ".join(current_words))
+                current_words = [word]
+                continue
+            current_words = candidate_words
+
+        if current_words:
+            parts.append(" ".join(current_words))
+
+        if max_bytes > 0:
+            adjusted: list[str] = []
+            for part in parts:
+                if len(part.encode("utf-8")) <= max_bytes:
+                    adjusted.append(part)
+                    continue
+                adjusted.extend(
+                    split_text_by_bytes(part, max_bytes=max_bytes, max_parts=max(target_parts, 1))
+                )
+            parts = adjusted
+
+        return parts[:max(target_parts, 1)]
 
     def _maybe_shrink_text(
         self,
@@ -605,6 +822,19 @@ class OracleService:
         if current:
             return " ".join(current)
         return trim_text(normalized, max_chars)
+
+    def _strip_sent_prefix(self, text: str, *, sent_text: str) -> str:
+        normalized_text = normalize_text(text)
+        normalized_sent = normalize_text(sent_text)
+        if not normalized_text or not normalized_sent:
+            return normalized_text
+        if normalized_text == normalized_sent:
+            return ""
+        if not normalized_text.casefold().startswith(normalized_sent.casefold()):
+            return normalized_text
+
+        remainder = normalized_text[len(normalized_sent) :].lstrip(" ,;:.!-")
+        return normalize_text(remainder)
 
     def _remember_chat(
         self,

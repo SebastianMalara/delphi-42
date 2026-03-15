@@ -15,6 +15,7 @@ from scripts.bootstrap_ubuntu_ovms import (
     resolve_archive,
     select_latest_archive_filename,
 )
+from scripts.manage_zims import add_file_archive
 
 
 class FakeHTTPResponse:
@@ -111,9 +112,42 @@ def test_render_runtime_artifacts_writes_kiwix_only_configs(tmp_path: Path) -> N
     assert live_config.radio.device == "/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"
     assert live_config.reply.short_max_chars == 100
     assert live_config.reply.condensed_max_chars == 600
-    assert live_config.reply.max_total_packets == 6
+    assert live_config.reply.max_total_packets == 7
+    assert live_config.reply.ask_min_total_packets == 5
+    assert live_config.reply.ask_max_total_packets == 7
+    assert live_config.reply.chat_min_total_packets == 2
+    assert live_config.reply.chat_max_total_packets == 4
     assert state is not None
     assert state.archive_filename == "wikipedia_en_medicine_nopic_2026-01.zim"
+
+
+def test_render_runtime_artifacts_uses_registry_answer_allowlist(tmp_path: Path) -> None:
+    source = tmp_path / "registry-source.zim"
+    source.write_bytes(b"zim")
+    add_file_archive(
+        tmp_path,
+        alias="appropedia.zim",
+        source_path=source,
+        answer_enabled=True,
+    )
+
+    payload = render_runtime_artifacts(
+        tmp_path,
+        archive=resolve_archive(
+            "nopic",
+            override_url=(
+                "https://download.kiwix.org/zim/wikipedia/"
+                "wikipedia_en_medicine_nopic_2026-01.zim"
+            ),
+        ),
+        base_url="http://127.0.0.1:8000/v3",
+        kiwix_url=DEFAULT_KIWIX_URL,
+        model=DEFAULT_MODEL,
+        radio_device=Path("/dev/serial/by-id/usb-Heltec_HT-n5262_demo-if00"),
+    )
+
+    sim_config = load_runtime_config(Path(payload["sim_config_path"]), root_dir=tmp_path)
+    assert sim_config.knowledge.zim_allowlist == ("appropedia.zim",)
 
 
 def test_bootstrap_script_reuses_existing_kiwix_runtime_layout() -> None:
@@ -123,7 +157,7 @@ def test_bootstrap_script_reuses_existing_kiwix_runtime_layout() -> None:
     assert "--reuse-index" in script_text
     assert "--no-kiwix" in script_text
     assert "KIWIX_CONTAINER=\"delphi-kiwix\"" in script_text
-    assert "Reusing staged Kiwix archive" in script_text
-    assert "allowlisted archive is missing" in script_text
+    assert "Reusing staged Kiwix archives" in script_text
+    assert "Managed archive registry is missing" in script_text
     assert f"MODEL_ID=\"{DEFAULT_MODEL}\"" in script_text
     assert "--tool_parser hermes3" in script_text

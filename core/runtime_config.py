@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -78,6 +79,10 @@ class ReplyConfig:
     short_max_chars: int = 120
     condensed_max_chars: int = 600
     max_total_packets: int = 6
+    ask_min_total_packets: Optional[int] = None
+    ask_max_total_packets: Optional[int] = None
+    chat_min_total_packets: Optional[int] = None
+    chat_max_total_packets: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +220,18 @@ def load_runtime_config(
             max_total_packets=int(
                 raw_data.get("reply", {}).get("max_total_packets", 6)
             ),
+            ask_min_total_packets=_optional_int(
+                raw_data.get("reply", {}).get("ask_min_total_packets")
+            ),
+            ask_max_total_packets=_optional_int(
+                raw_data.get("reply", {}).get("ask_max_total_packets")
+            ),
+            chat_min_total_packets=_optional_int(
+                raw_data.get("reply", {}).get("chat_min_total_packets")
+            ),
+            chat_max_total_packets=_optional_int(
+                raw_data.get("reply", {}).get("chat_max_total_packets")
+            ),
         ),
         wifi=WiFiConfig(ssid=str(raw_data.get("wifi", {}).get("ssid", "DELPHI-42"))),
         source_path=path.resolve(),
@@ -253,6 +270,12 @@ def _parse_string_tuple(raw_values: list[str] | tuple[str, ...]) -> tuple[str, .
     if not isinstance(raw_values, (list, tuple)):
         raise ConfigError("Expected a list of strings.")
     return tuple(str(value).strip() for value in raw_values if str(value).strip())
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def _normalize_backend(backend: str) -> str:
@@ -312,3 +335,35 @@ def _validate_runtime_config(config: OracleRuntimeConfig) -> None:
         raise ConfigError("reply.condensed_max_chars must be greater than 0.")
     if config.reply.max_total_packets <= 0:
         raise ConfigError("reply.max_total_packets must be greater than 0.")
+    if (
+        config.reply.ask_min_total_packets is not None
+        and config.reply.ask_min_total_packets <= 0
+    ):
+        raise ConfigError("reply.ask_min_total_packets must be greater than 0.")
+    if (
+        config.reply.ask_max_total_packets is not None
+        and config.reply.ask_max_total_packets <= 0
+    ):
+        raise ConfigError("reply.ask_max_total_packets must be greater than 0.")
+    if (
+        config.reply.chat_min_total_packets is not None
+        and config.reply.chat_min_total_packets <= 0
+    ):
+        raise ConfigError("reply.chat_min_total_packets must be greater than 0.")
+    if (
+        config.reply.chat_max_total_packets is not None
+        and config.reply.chat_max_total_packets <= 0
+    ):
+        raise ConfigError("reply.chat_max_total_packets must be greater than 0.")
+    if (
+        config.reply.ask_min_total_packets is not None
+        and config.reply.ask_max_total_packets is not None
+        and config.reply.ask_min_total_packets > config.reply.ask_max_total_packets
+    ):
+        raise ConfigError("reply.ask_min_total_packets must be less than or equal to reply.ask_max_total_packets.")
+    if (
+        config.reply.chat_min_total_packets is not None
+        and config.reply.chat_max_total_packets is not None
+        and config.reply.chat_min_total_packets > config.reply.chat_max_total_packets
+    ):
+        raise ConfigError("reply.chat_min_total_packets must be less than or equal to reply.chat_max_total_packets.")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from bot.command_parser import ParsedCommand
+from bot.radio_interface import IncomingMessage, MeshPacketMetrics
 from core.llm_runner import CHAT_UNAVAILABLE
 from core.oracle_service import OracleService, ReplyMode
 from core.retriever import KeywordRetriever, RetrievalChunk, Retriever
@@ -172,3 +173,30 @@ def test_chat_returns_unavailable_without_model() -> None:
 
     assert reply.mode is ReplyMode.CHAT_UNAVAILABLE
     assert CHAT_UNAVAILABLE in reply.text
+
+
+def test_mesh_returns_deterministic_packet_stats_without_model() -> None:
+    reply = OracleService().handle(
+        ParsedCommand(name="mesh"),
+        sender_id="node-1",
+        incoming_message=IncomingMessage(
+            sender_id="!mesh",
+            text="?mesh",
+            channel=2,
+            is_direct_message=True,
+            packet_id="77",
+            mesh=MeshPacketMetrics(
+                rx_rssi=-92,
+                rx_snr=5.5,
+                hop_start=4,
+                hop_limit=1,
+                rx_time=123456,
+                to_id="!local",
+            ),
+        ),
+    )
+
+    assert reply.mode is ReplyMode.MESH
+    assert "RSSI -92 dBm" in reply.text
+    assert "SNR 5.5 dB" in reply.text
+    assert "hops_used 3" in reply.text

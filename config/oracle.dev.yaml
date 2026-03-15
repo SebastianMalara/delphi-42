@@ -25,6 +25,10 @@ knowledge:
   zim_dir: data/library/zim
   zim_allowlist:
     - medicine.zim
+    - mdwiki.zim
+    - ifixit.zim
+    - appropedia.zim
+    - wikivoyage.zim
   zim_search_limit: 3
 
 llm:
@@ -38,7 +42,11 @@ llm:
 reply:
   short_max_chars: 120
   condensed_max_chars: 600
-  max_total_packets: 6
+  max_total_packets: 7
+  ask_min_total_packets: 5
+  ask_max_total_packets: 7
+  chat_min_total_packets: 2
+  chat_max_total_packets: 4
 
 wifi:
   ssid: DELPHI-42-DEV

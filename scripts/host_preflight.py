@@ -29,7 +29,8 @@ PROVIDER_EXPECTED_BASE_PATH = {
 }
 MESHTASTIC_SHORT_MAX_CHARS = 100
 MESHTASTIC_CONDENSED_MAX_CHARS = 600
-MESHTASTIC_MAX_TOTAL_PACKETS = 6
+MESHTASTIC_ASK_MAX_TOTAL_PACKETS = 7
+MESHTASTIC_CHAT_MAX_TOTAL_PACKETS = 4
 
 
 @dataclass(frozen=True)
@@ -231,7 +232,10 @@ def _check_mesh_packet_settings(config: OracleRuntimeConfig) -> CheckResult:
     if (
         config.reply.short_max_chars > MESHTASTIC_SHORT_MAX_CHARS
         or config.reply.condensed_max_chars > MESHTASTIC_CONDENSED_MAX_CHARS
-        or config.reply.max_total_packets > MESHTASTIC_MAX_TOTAL_PACKETS
+        or (config.reply.ask_max_total_packets or config.reply.max_total_packets)
+        > MESHTASTIC_ASK_MAX_TOTAL_PACKETS
+        or (config.reply.chat_max_total_packets or config.reply.max_total_packets)
+        > MESHTASTIC_CHAT_MAX_TOTAL_PACKETS
     ):
         return CheckResult(
             "mesh-packets",
@@ -240,7 +244,8 @@ def _check_mesh_packet_settings(config: OracleRuntimeConfig) -> CheckResult:
                 "reply contract exceeds live Meshtastic profile envelope: "
                 f"short<={MESHTASTIC_SHORT_MAX_CHARS}, "
                 f"condensed<={MESHTASTIC_CONDENSED_MAX_CHARS}, "
-                f"max_packets<={MESHTASTIC_MAX_TOTAL_PACKETS}"
+                f"ask_max_packets<={MESHTASTIC_ASK_MAX_TOTAL_PACKETS}, "
+                f"chat_max_packets<={MESHTASTIC_CHAT_MAX_TOTAL_PACKETS}"
             ),
         )
 

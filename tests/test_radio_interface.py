@@ -102,6 +102,8 @@ def test_meshtastic_radio_client_normalizes_packets_and_sends_responses() -> Non
 
     assert messages[0].sender_id == "!abcd"
     assert messages[0].is_direct_message is True
+    assert messages[0].mesh is not None
+    assert messages[0].mesh.rx_rssi is None
     assert messages[1].is_direct_message is False
 
     client.send_text(
@@ -135,6 +137,45 @@ def test_meshtastic_radio_client_normalizes_packets_and_sends_responses() -> Non
         }
     ]
     assert interface.closed is True
+
+
+def test_meshtastic_radio_client_preserves_mesh_metrics() -> None:
+    pubsub = StubPubSub()
+    interface = StubInterface("/dev/ttyUSB0")
+    client = MeshtasticRadioClient(
+        "/dev/ttyUSB0",
+        channel=3,
+        interface_factory=lambda devPath: interface,
+        pubsub_module=pubsub,
+    )
+
+    try:
+        receive_callback = pubsub.callbacks["meshtastic.receive"]
+        receive_callback(
+            {
+                "fromId": "!mesh",
+                "toId": "!local",
+                "channel": 1,
+                "id": 99,
+                "rxRssi": -88,
+                "rxSnr": 7.5,
+                "hopStart": 3,
+                "hopLimit": 1,
+                "rxTime": 123456,
+                "decoded": {"text": "?mesh"},
+            },
+            interface,
+        )
+
+        message = client.receive()[0]
+        assert message.mesh is not None
+        assert message.mesh.rx_rssi == -88
+        assert message.mesh.rx_snr == 7.5
+        assert message.mesh.hop_start == 3
+        assert message.mesh.hop_limit == 1
+        assert message.mesh.rx_time == 123456
+    finally:
+        client.close()
 
 
 def test_meshtastic_radio_client_raises_position_unavailable_without_fix() -> None:

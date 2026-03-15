@@ -17,9 +17,10 @@ services:
     image: ghcr.io/kiwix/kiwix-serve:3.8.0
     volumes:
       - ./data/library/zim:/data/zim:ro
-    command:
+    entrypoint:
       - /bin/sh
       - -lc
+    command:
       - |
         if ls /data/zim/*.zim >/dev/null 2>&1; then
           exec kiwix-serve --port=8080 /data/zim/*.zim;

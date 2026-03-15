@@ -31,6 +31,7 @@ zim = [
 delphi-bot = "bot.oracle_bot:main"
 delphi-dev-console = "bot.dev_console:main"
 delphi-mac-preflight = "scripts.mac_preflight:main"
+delphi-manage-zims = "scripts.manage_zims:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

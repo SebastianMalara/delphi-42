@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SUPPORTED_COMMANDS = {"help", "where", "pos", "ask", "chat"}
+SUPPORTED_COMMANDS = {"help", "where", "pos", "ask", "chat", "mesh"}
 
 HELP_TEXT = """Commands:
 ?help
@@ -10,10 +10,12 @@ HELP_TEXT = """Commands:
 ?pos
 ?ask <question>
 ?chat <message>
+?mesh
 
 Examples:
 ?ask how to purify water
 ?chat keep me company
+?mesh
 """
 
 
@@ -36,7 +38,7 @@ def parse_command(message: str) -> ParsedCommand:
     command = head[1:].lower()
     argument = tail.strip() or None
 
-    if command in {"help", "where", "pos"}:
+    if command in {"help", "where", "pos", "mesh"}:
         return ParsedCommand(name=command)
 
     if command in {"ask", "chat"}:

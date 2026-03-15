@@ -22,6 +22,7 @@ STABLE_T114_PATH="/dev/delphi-t114"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="$REPO_ROOT/scripts/bootstrap_ubuntu_ovms.py"
+ZIM_MANAGER="$REPO_ROOT/scripts/manage_zims.py"
 
 if [[ -z "$ROOT" ]]; then
   ROOT="$REPO_ROOT/artifacts/ubuntu-ovms"
@@ -37,6 +38,7 @@ Usage: ./scripts/bootstrap_ubuntu_ovms.sh [options]
 
 Options:
   --root PATH             Runtime root for the gitignored bootstrap output.
+  --model MODEL_ID        OVMS source model id. Default: OpenVINO/Qwen3-8B-int4-ov.
   --zim-profile PROFILE   One of: nopic, maxi, mini. Default: nopic.
   --zim-url URL           Override the Kiwix download URL.
   --radio-device PATH     Explicit radio path, or "auto" to detect Heltec by-id path.
@@ -52,6 +54,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --root)
       ROOT="$2"
+      shift 2
+      ;;
+    --model)
+      MODEL_ID="$2"
       shift 2
       ;;
     --zim-profile)
@@ -174,8 +180,8 @@ create_python_env() {
   )
 }
 
-resolve_archive() {
-  local args=("$HELPER" "resolve-zim" "--root" "$ROOT_ABS" "--profile" "$ZIM_PROFILE")
+ensure_survival_bundle() {
+  local args=("$ZIM_MANAGER" "ensure-bundle" "--root" "$ROOT_ABS" "--profile" "$ZIM_PROFILE")
   if [[ -n "$ZIM_URL" ]]; then
     args+=("--zim-url" "$ZIM_URL")
   fi
@@ -187,28 +193,13 @@ resolve_archive() {
 
 json_field() {
   local field="$1"
-  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$field"
-}
-
-download_archive() {
-  local archive_url="$1"
-  local archive_filename="$2"
-
-  mkdir -p "$ROOT_ABS/library/zim/releases"
-  local target="$ROOT_ABS/library/zim/releases/$archive_filename"
-  local temp_target="${target}.part"
-
-  if [[ ! -f "$target" || "$REFRESH_ZIM" -eq 1 ]]; then
-    status "Downloading ZIM archive: $archive_filename"
-    rm -f "$temp_target"
-    curl --fail --location --continue-at - --output "$temp_target" "$archive_url"
-    mv "$temp_target" "$target"
-  else
-    status "Reusing existing ZIM archive: $archive_filename"
-  fi
-
-  mkdir -p "$ROOT_ABS/library/zim"
-  ln -sfn "releases/$archive_filename" "$ROOT_ABS/library/zim/medicine.zim"
+  python3 -c '
+import json, sys
+value = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    value = value[part]
+print(value)
+' "$field"
 }
 
 stage_kiwix_runtime() {
@@ -218,20 +209,38 @@ stage_kiwix_runtime() {
   )
 }
 
+verify_staged_archives() {
+  python3 -c '
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).resolve()
+registry_path = root / "library/zim/managed-archives.json"
+if not registry_path.exists():
+    raise SystemExit(f"Managed archive registry is missing: {registry_path}")
+payload = json.loads(registry_path.read_text(encoding="utf-8"))
+allowlist = [item["alias"] for item in payload if item.get("answer_enabled")]
+if not allowlist:
+    raise SystemExit(f"No answer-enabled archives are present in {registry_path}")
+for alias in allowlist:
+    alias_path = root / "library/zim" / alias
+    resolved = alias_path.resolve(strict=True)
+    if not resolved.is_file():
+        raise SystemExit(f"Managed archive alias is not a file: {alias_path}")
+print(",".join(allowlist))
+' "$ROOT_ABS"
+}
+
 reuse_existing_index() {
   local zim_dir="$ROOT_ABS/library/zim"
-  local archive_path="$zim_dir/medicine.zim"
 
   if [[ ! -d "$zim_dir" ]]; then
     echo "--reuse-index requested but ZIM directory is missing: $zim_dir" >&2
     exit 1
   fi
-  if [[ ! -e "$archive_path" ]]; then
-    echo "--reuse-index requested but allowlisted archive is missing: $archive_path" >&2
-    exit 1
-  fi
 
-  status "Reusing staged Kiwix archive at $archive_path"
+  status "Reusing staged Kiwix archives under $zim_dir"
 }
 
 detect_radio() {
@@ -253,10 +262,15 @@ restart_kiwix_container() {
     --restart unless-stopped \
     -p "${KIWIX_PORT}:8080" \
     -v "$ROOT_ABS/library/zim:/data/zim:ro" \
+    --entrypoint /bin/sh \
     "$KIWIX_IMAGE" \
-    /bin/sh \
     -lc \
-    'exec kiwix-serve --port=8080 /data/zim/*.zim' >/dev/null
+    'set -- /data/zim/*.zim;
+     if [[ ! -e "$1" ]]; then
+       echo "No ZIM files found under /data/zim" >&2
+       exit 1
+     fi
+     exec kiwix-serve --port=8080 "$@"' >/dev/null
 }
 
 wait_for_kiwix() {
@@ -278,6 +292,7 @@ wait_for_kiwix() {
 ovms_extra_args() {
   if [[ "$MODEL_ID" == OpenVINO/Qwen3-* ]]; then
     printf '%s\n' --tool_parser hermes3
+    printf '%s\n' --reasoning_parser qwen3
     return
   fi
 }
@@ -376,26 +391,22 @@ main() {
 
   create_python_env
 
-  local archive_json
-  status "Resolving ZIM archive metadata for profile $ZIM_PROFILE"
-  archive_json="$(resolve_archive)"
-  local archive_profile archive_filename archive_url archive_alias
-  archive_profile="$(printf '%s' "$archive_json" | json_field profile)"
-  archive_filename="$(printf '%s' "$archive_json" | json_field filename)"
-  archive_url="$(printf '%s' "$archive_json" | json_field url)"
-  archive_alias="$(printf '%s' "$archive_json" | json_field alias)"
+  local bundle_json
+  status "Ensuring managed survival bundle under $ROOT_ABS"
+  bundle_json="$(ensure_survival_bundle)"
+  local archive_profile archive_filename archive_url answer_aliases
+  archive_profile="$(printf '%s' "$bundle_json" | json_field primary_archive.profile)"
+  archive_filename="$(printf '%s' "$bundle_json" | json_field primary_archive.filename)"
+  archive_url="$(printf '%s' "$bundle_json" | json_field primary_archive.url)"
+  answer_aliases="$(printf '%s' "$bundle_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(",".join(data.get("answer_enabled_aliases", [])))')"
+  status "Managed answer-time ZIM aliases: $answer_aliases"
 
-  if [[ "$archive_alias" != "medicine.zim" ]]; then
-    echo "Unexpected archive alias from helper: $archive_alias" >&2
-    exit 1
-  fi
-
-  download_archive "$archive_url" "$archive_filename"
   if [[ "$REUSE_INDEX" -eq 1 ]]; then
     reuse_existing_index
   else
     stage_kiwix_runtime
   fi
+  verify_staged_archives >/dev/null
 
   ensure_docker_service
   if [[ "$MANAGE_KIWIX" -eq 1 ]]; then
@@ -422,7 +433,7 @@ main() {
 Bootstrap complete.
 
 Runtime root: $ROOT_ABS
-ZIM release: $archive_filename
+Primary ZIM release: $archive_filename
 Live radio: $radio_device
 Kiwix browse URL: $(if [[ "$MANAGE_KIWIX" -eq 1 ]]; then printf '%s' "$KIWIX_URL"; else printf 'not started (--no-kiwix)'; fi)
 

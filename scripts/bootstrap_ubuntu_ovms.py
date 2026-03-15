@@ -8,8 +8,15 @@ import textwrap
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from urllib import request
 from urllib.parse import urlparse
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.manage_zims import answer_enabled_aliases
+else:
+    from scripts.manage_zims import answer_enabled_aliases
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -199,6 +206,7 @@ def render_runtime_artifacts(
 ) -> dict[str, str]:
     paths = build_paths(root)
     _ensure_runtime_directories(paths)
+    allowlist = answer_enabled_aliases(root) or (archive.alias,)
 
     sim_config_path = paths.config_dir / "oracle.ubuntu.ovms.sim.local.yaml"
     live_config_path = paths.config_dir / "oracle.ubuntu.ovms.live.local.yaml"
@@ -211,7 +219,7 @@ def render_runtime_artifacts(
             kiwix_url=kiwix_url,
             model=model,
             zim_dir=paths.zim_dir,
-            zim_alias=archive.alias,
+            zim_aliases=allowlist,
         ),
         encoding="utf-8",
     )
@@ -224,7 +232,7 @@ def render_runtime_artifacts(
             kiwix_url=kiwix_url,
             model=model,
             zim_dir=paths.zim_dir,
-            zim_alias=archive.alias,
+            zim_aliases=allowlist,
         ),
         encoding="utf-8",
     )
@@ -353,7 +361,7 @@ def _config_text(
     kiwix_url: str,
     model: str,
     zim_dir: Path,
-    zim_alias: str,
+    zim_aliases: tuple[str, ...],
 ) -> str:
     is_live_radio = radio_transport == "meshtastic"
     radio_spacing = 8.0 if is_live_radio else 0.0
@@ -362,6 +370,7 @@ def _config_text(
     radio_payload_bytes = 120 if is_live_radio else 0
     short_max_chars = 100 if is_live_radio else 120
     condensed_max_chars = 600
+    allowlist_block = "\n".join(f"            - {alias}" for alias in zim_aliases)
     return textwrap.dedent(
         f"""\
         node_name: {node_name}
@@ -390,7 +399,7 @@ def _config_text(
           kiwix_url: {_yaml_string(kiwix_url)}
           zim_dir: {_yaml_string(str(zim_dir))}
           zim_allowlist:
-            - {zim_alias}
+{allowlist_block}
           zim_search_limit: 3
 
         llm:
@@ -404,7 +413,11 @@ def _config_text(
         reply:
           short_max_chars: {short_max_chars}
           condensed_max_chars: {condensed_max_chars}
-          max_total_packets: 6
+          max_total_packets: 7
+          ask_min_total_packets: 5
+          ask_max_total_packets: 7
+          chat_min_total_packets: 2
+          chat_max_total_packets: 4
 
         wifi:
           ssid: DELPHI-42-OVMS
