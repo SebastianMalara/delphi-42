@@ -10,6 +10,7 @@ REUSE_INDEX=0
 LIVE_RELOGIN_REQUIRED=0
 MANAGE_KIWIX=1
 KIWIX_PORT=8080
+ASK_ALLOWLIST=0
 
 MODEL_ID="OpenVINO/Qwen3-8B-int4-ov"
 OVMS_BASE_URL="http://127.0.0.1:8000/v3"
@@ -44,6 +45,7 @@ Options:
   --radio-device PATH     Explicit radio path, or "auto" to detect Heltec by-id path.
   --refresh-zim           Ignore pinned state and resolve/download the ZIM again.
   --reuse-index           Reuse the existing local ZIM runtime layout instead of restaging it.
+  --ask-allowlist         Prompt for each managed ZIM before keeping it searchable by Delphi.
   --no-kiwix              Skip starting the managed Kiwix browse container.
   --kiwix-port PORT       Host port for the managed Kiwix container. Default: 8080.
   --help                  Show this help.
@@ -78,6 +80,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --reuse-index)
       REUSE_INDEX=1
+      shift
+      ;;
+    --ask-allowlist)
+      ASK_ALLOWLIST=1
       shift
       ;;
     --no-kiwix)
@@ -189,6 +195,67 @@ ensure_survival_bundle() {
     args+=("--refresh")
   fi
   python3 "${args[@]}"
+}
+
+prompt_answer_allowlist() {
+  if [[ "$ASK_ALLOWLIST" -ne 1 ]]; then
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "--ask-allowlist requires an interactive terminal." >&2
+    exit 1
+  fi
+
+  status "Reviewing managed ZIM search allowlist"
+  local row alias enabled filename notes prompt reply normalized target_enabled
+  while IFS=$'\t' read -r alias enabled filename notes; do
+    [[ -z "$alias" ]] && continue
+    if [[ "$enabled" == "true" ]]; then
+      prompt="Y/n"
+      target_enabled=true
+    else
+      prompt="y/N"
+      target_enabled=false
+    fi
+    printf 'Allow %s (%s) for Delphi search?' "$alias" "$filename"
+    if [[ -n "$notes" ]]; then
+      printf '\n  %s' "$notes"
+    fi
+    printf '\nSelection [%s] ' "$prompt"
+    read -r reply
+    normalized="$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$normalized" in
+      y|yes)
+        target_enabled=true
+        ;;
+      n|no)
+        target_enabled=false
+        ;;
+      "")
+        ;;
+      *)
+        echo "Expected yes or no; keeping current value for $alias." >&2
+        ;;
+    esac
+    python3 "$ZIM_MANAGER" set-answer --root "$ROOT_ABS" --alias "$alias" --enabled "$target_enabled" >/dev/null
+  done < <(
+    python3 "$ZIM_MANAGER" list --root "$ROOT_ABS" | python3 -c '
+import json
+import sys
+payload = json.load(sys.stdin)
+for item in payload.get("archives", []):
+    alias = str(item.get("alias", "")).strip()
+    enabled = "true" if item.get("answer_enabled") else "false"
+    filename = str(item.get("filename", "")).strip()
+    notes = " ".join(str(item.get("notes", "")).split())
+    print("\t".join((alias, enabled, filename, notes)))
+'
+  )
+}
+
+sync_allowlist() {
+  python3 "$ZIM_MANAGER" sync-allowlist --root "$ROOT_ABS"
 }
 
 json_field() {
@@ -398,7 +465,8 @@ main() {
   archive_profile="$(printf '%s' "$bundle_json" | json_field primary_archive.profile)"
   archive_filename="$(printf '%s' "$bundle_json" | json_field primary_archive.filename)"
   archive_url="$(printf '%s' "$bundle_json" | json_field primary_archive.url)"
-  answer_aliases="$(printf '%s' "$bundle_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(",".join(data.get("answer_enabled_aliases", [])))')"
+  prompt_answer_allowlist
+  answer_aliases="$(python3 "$ZIM_MANAGER" list --root "$ROOT_ABS" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(",".join(data.get("answer_enabled_aliases", [])))')"
   status "Managed answer-time ZIM aliases: $answer_aliases"
 
   if [[ "$REUSE_INDEX" -eq 1 ]]; then
@@ -418,7 +486,7 @@ main() {
   restart_ovms_container
   wait_for_ovms
 
-  render_runtime_artifacts "$archive_profile" "$archive_filename" "$archive_url" "$radio_device" >/dev/null
+  sync_allowlist >/dev/null
 
   status "Running simulated preflight"
   "$ROOT_ABS/bin/preflight-sim"

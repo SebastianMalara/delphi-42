@@ -57,6 +57,14 @@ class OracleBot:
     def process_inbox(self) -> list[str]:
         delivery_log: list[str] = []
         for message in self.radio.receive():
+            self.logger.debug(
+                "inbound_text sender=%s channel=%s packet_id=%s direct=%s text=%r",
+                message.sender_id,
+                message.channel,
+                message.packet_id or "-",
+                message.is_direct_message,
+                message.text,
+            )
             routed = self.router.route(message)
             if routed is None:
                 self.logger.info(
@@ -104,6 +112,15 @@ class OracleBot:
                 self.sleep_fn(self.text_packet_spacing_seconds)
 
             outbound = self._trim_text_response(response)
+            self.logger.debug(
+                "outbound_packet_pre_send to=%s channel=%s packet=%s/%s original=%r trimmed=%r",
+                response.destination,
+                response.channel,
+                packet_index,
+                packet_total,
+                response.text,
+                outbound.text,
+            )
             packet_bytes = len(outbound.text.encode("utf-8"))
             delivered = False
             max_attempts = self.text_packet_retry_attempts + 1
@@ -307,7 +324,8 @@ def build_router(
             llm=llm,
             reply_config=config.reply,
             packet_byte_limit=config.radio.max_text_payload_bytes,
-        )
+        ),
+        logger=logger,
     )
 
 

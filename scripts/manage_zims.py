@@ -403,6 +403,53 @@ def set_answer_enabled(root: Path, *, alias: str, enabled: bool) -> CatalogArchi
     return selected
 
 
+def sync_allowlist(root: Path) -> dict[str, object]:
+    root = root.expanduser().resolve()
+    if __package__ in {None, ""}:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from scripts.bootstrap_ubuntu_ovms import (  # type: ignore
+            ResolvedArchive,
+            build_paths,
+            load_state,
+            render_runtime_artifacts,
+        )
+    else:
+        from scripts.bootstrap_ubuntu_ovms import (
+            ResolvedArchive,
+            build_paths,
+            load_state,
+            render_runtime_artifacts,
+        )
+
+    state = load_state(root)
+    if state is None:
+        raise ManagedZimError(
+            f"Bootstrap state is missing under {build_paths(root).state_path}; run the bootstrap once first."
+        )
+
+    archive = ResolvedArchive(
+        profile=state.archive_profile,
+        filename=state.archive_filename,
+        url=state.archive_url,
+        alias=state.archive_alias,
+    )
+    rendered = render_runtime_artifacts(
+        root,
+        archive=archive,
+        base_url=state.llm_base_url,
+        kiwix_url=state.kiwix_url,
+        model=state.llm_model,
+        radio_device=Path(state.radio_device).expanduser(),
+    )
+    return {
+        "root": str(root),
+        "answer_enabled_aliases": list(answer_enabled_aliases(root)),
+        "rendered": rendered,
+    }
+
+
 def filename_from_url(url: str) -> str:
     parsed = urlparse(url.strip())
     filename = Path(parsed.path).name
@@ -473,6 +520,12 @@ def build_parser() -> argparse.ArgumentParser:
     set_answer_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     set_answer_parser.add_argument("--alias", required=True)
     set_answer_parser.add_argument("--enabled", required=True, type=_bool_flag)
+
+    sync_parser = subparsers.add_parser(
+        "sync-allowlist",
+        help="Rewrite generated runtime configs from the current answer-enabled registry state.",
+    )
+    sync_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     return parser
 
 
@@ -530,6 +583,9 @@ def main() -> None:
                 enabled=bool(args.enabled),
             )
             print(json.dumps(asdict(archive), indent=2, sort_keys=True))
+            return
+        if args.command == "sync-allowlist":
+            print(json.dumps(sync_allowlist(args.root), indent=2, sort_keys=True))
             return
     except ManagedZimError as exc:
         raise SystemExit(str(exc)) from exc

@@ -390,6 +390,9 @@ class OracleService:
         if len(normalized) <= target_chars:
             return normalized, 0
 
+        if target_chars <= self.reply_config.short_max_chars:
+            return self._deterministic_limit(normalized, target_chars), 0
+
         if self.llm is None:
             return self._deterministic_limit(normalized, target_chars), 0
 
@@ -630,11 +633,14 @@ class OracleService:
             return ()
 
         cleaned: list[str] = []
-        for packet in packets:
+        for index, packet in enumerate(packets):
             normalized = normalize_text(packet)
             if not normalized:
                 continue
             payload = normalized.removeprefix(normalize_text(self.response_prefix)).strip()
+            is_last = index == len(packets) - 1
+            if self._is_artifact_packet(payload, is_last=is_last):
+                continue
             if cleaned and self._is_trivial_tail(payload):
                 previous_payload = normalize_text(cleaned[-1]).removeprefix(
                     normalize_text(self.response_prefix)
@@ -654,6 +660,35 @@ class OracleService:
         if len(words) == 1 and len(words[0]) <= 16:
             return True
         if len(words) == 2 and len(payload) <= 18:
+            return True
+        return False
+
+    def _is_artifact_packet(self, payload: str, *, is_last: bool) -> bool:
+        normalized = normalize_text(payload).casefold()
+        if not normalized:
+            return True
+        if normalized in {
+            "company",
+            "keep me company",
+            "?mesh",
+            "?ask",
+            "?chat",
+            "?help",
+            "?where",
+            "?pos",
+            "mesh",
+            "ask",
+            "chat",
+            "help",
+            "where",
+            "pos",
+        }:
+            return True
+        if len(normalized) <= 24 and any(
+            command in normalized for command in ("?mesh", "?ask", "?chat", "?help", "?where", "?pos")
+        ):
+            return True
+        if is_last and self._is_trivial_tail(payload):
             return True
         return False
 
@@ -720,6 +755,8 @@ class OracleService:
         normalized = normalize_text(text)
         if len(normalized) <= max_chars or self.llm is None:
             return normalized, 0
+        if max_chars <= self.reply_config.short_max_chars:
+            return self._deterministic_limit(normalized, max_chars), 0
 
         system_prompt = ASK_SYSTEM_PROMPT if preserve_grounding else CHAT_SYSTEM_PROMPT
         prompt = build_shrink_prompt(
@@ -858,7 +895,7 @@ class OracleService:
 
     def _static_packets(self, text: str) -> tuple[str, ...]:
         if self.packet_byte_limit <= 0:
-            return (prefix_text(text, self.response_prefix),)
+            return self._cleanup_packet_sequence((prefix_text(text, self.response_prefix),))
 
         packets = split_prefixed_packets(
             text,
@@ -866,7 +903,7 @@ class OracleService:
             packet_byte_limit=self.packet_byte_limit,
             max_parts=max(self.reply_config.max_total_packets, 1),
         )
-        return tuple(packets or [prefix_text(text, self.response_prefix)])
+        return self._cleanup_packet_sequence(tuple(packets or [prefix_text(text, self.response_prefix)]))
 
     def _static_reply(
         self,

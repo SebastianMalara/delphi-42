@@ -69,6 +69,7 @@ class BootstrapState:
     archive_alias: str
     llm_model: str
     llm_base_url: str
+    kiwix_url: str
     radio_device: str
     generated_at: str
 
@@ -107,6 +108,7 @@ def load_state(root: Path) -> BootstrapState | None:
             or DEFAULT_ZIM_ALIAS,
             llm_model=str(raw["llm_model"]).strip(),
             llm_base_url=str(raw["llm_base_url"]).strip(),
+            kiwix_url=str(raw.get("kiwix_url", DEFAULT_KIWIX_URL)).strip() or DEFAULT_KIWIX_URL,
             radio_device=str(raw["radio_device"]).strip(),
             generated_at=str(raw["generated_at"]).strip(),
         )
@@ -238,7 +240,14 @@ def render_runtime_artifacts(
     )
 
     helper_paths = _write_helper_scripts(paths, sim_config_path, live_config_path)
-    _write_state(paths, archive=archive, base_url=base_url, model=model, radio_device=radio_device)
+    _write_state(
+        paths,
+        archive=archive,
+        base_url=base_url,
+        kiwix_url=kiwix_url,
+        model=model,
+        radio_device=radio_device,
+    )
 
     return {
         "root": str(paths.root),
@@ -276,6 +285,7 @@ def _write_state(
     *,
     archive: ResolvedArchive,
     base_url: str,
+    kiwix_url: str,
     model: str,
     radio_device: Path,
 ) -> None:
@@ -286,6 +296,7 @@ def _write_state(
         archive_alias=archive.alias,
         llm_model=model,
         llm_base_url=base_url,
+        kiwix_url=kiwix_url,
         radio_device=str(radio_device),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )

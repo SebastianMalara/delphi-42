@@ -180,7 +180,7 @@ def assess_retrieval(
     if callable(context_expander):
         context = tuple(context_expander(selected, limit=context_limit))
     else:
-        context = tuple(expand_source_context_from_chunks(selected, chunks, limit=context_limit))
+        context = tuple(candidate.chunk for candidate in by_source[:context_limit])
 
     return RetrievalAssessment(
         anchor_terms=anchor_terms,
@@ -355,6 +355,7 @@ QUESTION_STOPWORDS = {
     "when",
     "where",
     "which",
+    "while",
     "who",
     "why",
     "will",
@@ -506,7 +507,7 @@ def _article_chunks(
     chunks: list[RetrievalChunk] = []
     window_size = 2
     for index in range(len(sentences)):
-        window = " ".join(sentences[index : index + window_size]).strip()
+        window = _trim_retrieval_snippet(" ".join(sentences[index : index + window_size]).strip())
         if not window:
             continue
         coverage = score_query_terms(query_terms, title, window)
@@ -527,12 +528,22 @@ def _article_chunks(
     return [
         RetrievalChunk(
             title=title,
-            snippet=normalized_text,
+            snippet=_trim_retrieval_snippet(normalized_text),
             source=f"{archive_name}:{article_path}",
             matched_terms=score_query_terms(query_terms, title, normalized_text),
             ordinal=0,
         )
     ]
+
+
+def _trim_retrieval_snippet(text: str, max_chars: int = 420) -> str:
+    normalized = " ".join(text.strip().split())
+    if len(normalized) <= max_chars:
+        return normalized
+    cutoff = normalized[:max_chars].rstrip()
+    if " " in cutoff:
+        cutoff = cutoff.rsplit(" ", maxsplit=1)[0]
+    return cutoff.rstrip(" ,;:") + "..."
 
 
 def _path_to_title(article_path: str) -> str:

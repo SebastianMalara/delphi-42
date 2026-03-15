@@ -164,11 +164,12 @@ class MeshtasticRadioClient:
             pass
 
     def _handle_receive(self, packet: dict, interface: Any) -> None:
-        text = (
-            packet.get("decoded", {}).get("text")
-            or packet.get("decoded", {}).get("payload")
-            or ""
-        )
+        decoded = packet.get("decoded", {}) or {}
+        portnum = str(decoded.get("portnum", "")).strip()
+        if portnum and portnum != "TEXT_MESSAGE_APP":
+            return
+
+        text = decoded.get("text") or ""
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
         if not isinstance(text, str) or not text.strip():
