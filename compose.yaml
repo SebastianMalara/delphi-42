@@ -14,7 +14,7 @@ services:
       - bot.oracle_bot
 
   kiwix:
-    image: kiwix/kiwix-serve:latest
+    image: ghcr.io/kiwix/kiwix-serve:3.8.0
     volumes:
       - ./data/library/zim:/data/zim:ro
     command:
