@@ -35,7 +35,7 @@ flowchart LR
 
 ## Interfaces
 
-- Meshtastic DM commands: `help`, `where`, `pos`, `ask <question>`
+- Meshtastic DM commands: `?help`, `?where`, `?pos`, `?ask <question>`, `?chat <message>`, `?mesh`
 - Private position packets returned on `where` and `pos`
 - Local hotspot web access to Kiwix-served archive
 - Local file-based interfaces for config, models, corpora, and indexes

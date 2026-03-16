@@ -46,7 +46,7 @@ Evidence references should point to test logs, checklists, or field notes record
 | ID | Capability | Level | Environment | Owner | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | TM-001 | `help` returns command list | Unit | local dev | Software Lead | `pytest` output |
-| TM-002 | plain text is treated as implicit `ask` | Unit | local dev | Software Lead | `pytest` output |
+| TM-002 | plain text without a `?` command prefix returns `help` (no implicit intent guess) | Unit | local dev | Software Lead | `pytest` output |
 | TM-003 | `where` triggers private position flow only | Integration | local dev | Software Lead | router/service test log |
 | TM-004 | public questions are ignored | Integration | local dev | Software Lead | bot integration test |
 | TM-005 | index rebuild succeeds from staged corpus | System | Pi bench | AI Lead | index build log |
