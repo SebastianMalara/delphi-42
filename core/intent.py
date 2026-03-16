@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from bot.command_parser import ParsedCommand
+from core.command import ParsedCommand
 
 
 class IntentType(str, Enum):

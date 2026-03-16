@@ -148,4 +148,4 @@ Notes:
 
 ## License
 
-TBD
+MIT — see [LICENSE](LICENSE).

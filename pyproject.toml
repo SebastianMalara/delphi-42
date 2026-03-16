@@ -16,7 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 bot = [
-  "meshtastic",
+  "meshtastic>=2.0,<3.0",
+  "PyPubSub>=4.0",
 ]
 llm = [
   "openai>=1.30.0",

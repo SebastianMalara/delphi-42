@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from core.command import ParsedCommand  # canonical definition lives in core
 
 SUPPORTED_COMMANDS = {"help", "where", "pos", "ask", "chat", "mesh"}
 
@@ -18,11 +18,7 @@ Examples:
 ?mesh
 """
 
-
-@dataclass(frozen=True)
-class ParsedCommand:
-    name: str
-    argument: str | None = None
+__all__ = ["ParsedCommand", "parse_command", "SUPPORTED_COMMANDS", "HELP_TEXT"]
 
 
 def parse_command(message: str) -> ParsedCommand:

@@ -70,6 +70,18 @@ Host-managed Pi services:
 - power management and shutdown hooks
 - hardware monitoring and telemetry collection
 
+## mock-openai Environment Variables
+
+The `mock-openai` service (`scripts/mock_openai_api.py`) is configurable via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOCK_OPENAI_MODEL` | `qwen3-1.7B-Int8-ctx-axcl` | Model name returned by the `/v1/models` endpoint |
+| `MOCK_OPENAI_PORT` | `8000` | TCP port the mock server listens on |
+| `MOCK_OPENAI_API_PREFIX` | `/v1` | URL prefix for all API routes |
+
+Set these in `compose.dev.yaml` under the `mock-openai` service `environment` block if you need to override the defaults.
+
 ## Validation Checks
 
 - `oracle-indexer` completes successfully and writes the configured SQLite DB
