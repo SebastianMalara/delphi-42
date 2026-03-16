@@ -340,7 +340,7 @@ def add_zimit_archive(
         "/output",
         zimit_image,
         "zimit",
-        "--url",
+        "--seeds",
         website_url,
         "--name",
         archive_stem,
