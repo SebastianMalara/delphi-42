@@ -7,7 +7,8 @@ Wants=local-fs.target llm-openai-api.service
 Type=simple
 User=pi
 WorkingDirectory=/opt/delphi-42
-Environment=DELPHI_CONFIG=/opt/delphi-42/config/oracle.yaml
+Environment=DELPHI_CONFIG=/opt/delphi-42/config/oracle.example.yaml
+Environment=DELPHI_LOG_LEVEL=INFO
 ExecStart=/usr/bin/env python -m bot.oracle_bot
 Restart=on-failure
 RestartSec=5

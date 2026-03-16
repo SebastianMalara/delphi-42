@@ -3,10 +3,14 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
+import logging
 import re
 from typing import TYPE_CHECKING
 
-from bot.command_parser import HELP_TEXT, ParsedCommand
+LOGGER = logging.getLogger("delphi42.core")
+
+from bot.command_parser import HELP_TEXT
+from core.command import ParsedCommand
 
 from .intent import IntentType, classify_command
 from .llm_runner import (
@@ -121,6 +125,9 @@ class OracleService:
         self.response_prefix = response_prefix
         self.packet_byte_limit = packet_byte_limit
         self.chat_history_exchanges = chat_history_exchanges
+        # NOTE: _chat_history is not thread-safe. The bot is assumed to process
+        # one message at a time (single-threaded event loop). If concurrency is
+        # introduced, guard mutations with a threading.Lock.
         self._chat_history: dict[str, deque[tuple[str, str]]] = defaultdict(
             lambda: deque(maxlen=max(self.chat_history_exchanges, 1) * 2)
         )
@@ -307,7 +314,8 @@ class OracleService:
                 system_prompt=ASK_SYSTEM_PROMPT,
                 temperature=0.0,
             )
-        except (ModelExecutionError, ModelUnavailableError):
+        except (ModelExecutionError, ModelUnavailableError) as exc:
+            LOGGER.warning("LLM unavailable during ask; using deterministic fallback: %s", exc)
             return deterministic_bundle, ReplyMode.ASK_DETERMINISTIC_FALLBACK, 0
 
         full_answer = normalize_text(full_answer)
@@ -350,7 +358,8 @@ class OracleService:
                 system_prompt=CHAT_SYSTEM_PROMPT,
                 temperature=0.6,
             )
-        except (ModelExecutionError, ModelUnavailableError):
+        except (ModelExecutionError, ModelUnavailableError) as exc:
+            LOGGER.warning("LLM unavailable during chat; returning unavailable: %s", exc)
             return None, 0
 
         full_answer = normalize_text(full_answer)
